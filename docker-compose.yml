@@ -36,7 +36,8 @@ services:
       BACKUP_DIR: /app/backups
       TZ: ${TZ:-Europe/Rome}
     ports:
-      - "${PORT:-3000}:3000"
+      # <porta pubblicata sull'host>:<porta interna del container, fissa>
+      - "${HOST_PORT:-3000}:3000"
     volumes:
       - ./backups:/app/backups
 

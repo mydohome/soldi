@@ -13,6 +13,7 @@ Funziona da smartphone e da desktop (interfaccia responsive), gira interamente c
 
 - [Caratteristiche](#caratteristiche)
 - [Avvio rapido](#avvio-rapido)
+- [Deploy su un server (Debian)](#deploy-su-un-server-debian)
 - [Configurazione (.env)](#configurazione-env)
 - [Uso](#uso)
 - [Backup automatico](#backup-automatico)
@@ -66,11 +67,65 @@ Per fermare: `docker compose down` (i dati restano nel volume `db-data`).
 
 ---
 
+## Deploy su un server (Debian)
+
+Su un server Debian con Docker già installato, per pubblicare sulla **porta 3010**:
+
+```bash
+# 1. codice
+git clone https://github.com/mydohome/soldi.git
+cd soldi
+
+# 2. configurazione
+cp .env.example .env
+sed -i "s/^HOST_PORT=.*/HOST_PORT=3010/" .env
+sed -i "s/^JWT_SECRET=.*/JWT_SECRET=$(openssl rand -hex 32)/" .env
+sed -i "s/^PGPASSWORD=.*/PGPASSWORD=$(openssl rand -hex 16)/" .env   # password DB robusta
+
+# 3. avvio
+docker compose up -d --build
+
+# 4. verifica
+curl -s http://localhost:3010/api/health      # {"status":"ok"}
+docker compose ps
+```
+
+L'app risponde su `http://IP_DEL_SERVER:3010`. Apri la porta nel firewall se necessario
+(`ufw allow 3010/tcp`).
+
+**Aggiornamenti:**
+
+```bash
+cd soldi && git pull && docker compose up -d --build
+```
+
+Lo schema del database viene applicato automaticamente a ogni avvio (idempotente).
+
+**HTTPS / dominio:** metti l'app dietro un reverse proxy (nginx, Caddy, Traefik) che
+gestisce il certificato e inoltra a `127.0.0.1:3010`. In quel caso, nel `.env`:
+
+```
+COOKIE_SECURE=true
+```
+
+**Backup fuori dal server:** la cartella `./backups` contiene i CSV settimanali.
+Sincronizzala altrove, es. con cron:
+
+```bash
+0 4 * * 0  rsync -a /percorso/soldi/backups/ utente@altro-host:/backup/soldi/
+```
+
+**Avvio automatico al boot:** i servizi hanno `restart: unless-stopped`, quindi
+Docker li riavvia da solo se il server si riavvia (basta che il servizio `docker` sia abilitato:
+`systemctl enable docker`).
+
+---
+
 ## Configurazione (.env)
 
 | Variabile | Default | Descrizione |
 |---|---|---|
-| `PORT` | `3000` | Porta pubblicata sull'host. |
+| `HOST_PORT` | `3000` | Porta pubblicata sull'host (es. `3010` su un server). L'app nel container resta sempre sulla 3000. |
 | `JWT_SECRET` | — (**obbligatorio**) | Segreto per firmare i cookie di sessione. Usa `openssl rand -hex 32`. |
 | `COOKIE_SECURE` | `false` | Metti `true` se servi l'app dietro HTTPS. |
 | `TZ` | `Europe/Rome` | Fuso orario del container (influenza l'orario del backup). |
