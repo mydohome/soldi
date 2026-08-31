@@ -1,0 +1,10 @@
+node_modules/
+.env
+*.log
+npm-debug.log*
+.DS_Store
+coverage/
+
+# Local backup output (keep the folder, ignore its contents)
+backups/*
+!backups/.gitkeep

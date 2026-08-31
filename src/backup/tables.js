@@ -1,0 +1,18 @@
+'use strict';
+
+/**
+ * Tables to back up, in a foreign-key-safe order (parents first).
+ * Restore truncates and re-inserts in this same order; the reverse order is
+ * used when clearing existing rows.
+ */
+module.exports = [
+  { name: 'users', columns: ['id', 'email', 'password_hash', 'display_name', 'created_at'] },
+  {
+    name: 'categories',
+    columns: ['id', 'user_id', 'name', 'color', 'kind', 'created_at'],
+  },
+  {
+    name: 'transactions',
+    columns: ['id', 'user_id', 'type', 'amount_cents', 'category_id', 'note', 'occurred_on', 'created_at'],
+  },
+];
