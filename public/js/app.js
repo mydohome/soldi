@@ -3,7 +3,20 @@ import { donut, bars, spark, fmtEur, escapeHtml } from './charts.js';
 import { icons, logoMark } from './icons.js';
 
 const root = document.getElementById('app');
-const state = { user: null, view: 'dashboard', anchor: today(), period: 'month' };
+const state = { user: null, view: 'dashboard', anchor: today(), period: 'month', scope: '' };
+
+// scope: '' = tutti, 'personal' = personali, 'home' = casa
+const SCOPES = {
+  personal: { label: 'Personale', short: 'Pers.', icon: () => icons.person },
+  home: { label: 'Casa', short: 'Casa', icon: () => icons.home },
+};
+const ACCOUNT_KINDS = {
+  bank: 'Conto corrente',
+  cash: 'Contanti',
+  card: 'Carta',
+  savings: 'Risparmio',
+  other: 'Altro',
+};
 
 /* ------------------------------------------------------------------ utils */
 function today() {
@@ -170,6 +183,7 @@ const NAV = [
   { id: 'dashboard', label: 'Dashboard', icon: icons.dashboard },
   { id: 'movimenti', label: 'Movimenti', icon: icons.list },
   { id: 'categorie', label: 'Categorie', icon: icons.tag },
+  { id: 'conti', label: 'Conti', icon: icons.bank },
   { id: 'backup', label: 'Backup', icon: icons.archive },
 ];
 
@@ -230,6 +244,7 @@ function renderView() {
     dashboard: viewDashboard,
     movimenti: viewMovimenti,
     categorie: viewCategorie,
+    conti: viewConti,
     backup: viewBackup,
   }[state.view])(main);
 }
@@ -238,7 +253,9 @@ function renderView() {
 async function viewDashboard(main) {
   let data;
   try {
-    data = await api.overview(state.anchor);
+    const params = new URLSearchParams({ anchor: state.anchor });
+    if (state.scope) params.set('scope', state.scope);
+    data = await api.overview(params.toString());
   } catch (e) {
     main.innerHTML = `<div class="empty">Errore nel caricamento: ${escapeHtml(e.message)}</div>`;
     return;
@@ -268,6 +285,12 @@ async function viewDashboard(main) {
           <button data-p="week" class="${p === 'week' ? 'active' : ''}">Settimana</button>
           <button data-p="month" class="${p === 'month' ? 'active' : ''}">Mese</button>
         </div>
+      </div>
+
+      <div class="segment scope-seg" id="scope-seg" style="margin-bottom:14px">
+        <button data-s="" class="${state.scope === '' ? 'active' : ''}">Tutti</button>
+        <button data-s="personal" class="${state.scope === 'personal' ? 'active' : ''}">${icons.person}Personale</button>
+        <button data-s="home" class="${state.scope === 'home' ? 'active' : ''}">${icons.home}Casa</button>
       </div>
 
       <div class="period-nav" style="margin-bottom:18px">
@@ -327,11 +350,45 @@ async function viewDashboard(main) {
         </div>
       </div>
 
+      <div class="grid cols-2" style="margin-top:16px">
+        <div class="card card-pad chart-card">
+          <h3>Personale vs Casa</h3>
+          <p class="hint">Uscite del mese</p>
+          ${scopeSplitBlock(data.scopeSplit)}
+        </div>
+        <div class="card card-pad chart-card">
+          <h3>Spese per conto</h3>
+          <p class="hint">Mese di ${escapeHtml(capitalize(dtfMonth.format(parseISO(state.anchor))))}</p>
+          <div class="legend">
+            ${
+              (data.expenseByAccount || []).filter((x) => x.total > 0).length
+                ? data.expenseByAccount
+                    .filter((x) => x.total > 0)
+                    .map(
+                      (x) =>
+                        `<div class="row"><span class="dot" style="background:${x.color}"></span>${escapeHtml(
+                          x.name
+                        )}<span class="amt">${fmtEur(x.total)}</span></div>`
+                    )
+                    .join('')
+                : '<span class="muted">Assegna un conto ai movimenti per vedere questa ripartizione.</span>'
+            }
+          </div>
+        </div>
+      </div>
+
       <h2 class="section-title">Movimenti recenti</h2>
       <div class="card" id="recent"></div>
     </div>
   `)
   );
+
+  main.querySelector('#scope-seg').addEventListener('click', (e) => {
+    const b = e.target.closest('button');
+    if (!b) return;
+    state.scope = b.dataset.s;
+    viewDashboard(main);
+  });
 
   main.querySelector('#period-seg').addEventListener('click', (e) => {
     const b = e.target.closest('button');
@@ -353,7 +410,9 @@ async function viewDashboard(main) {
   });
 
   const { from, to } = periodRange(p, state.anchor);
-  const { transactions } = await api.transactions(`from=${from}&to=${to}&limit=8`);
+  const recentQs = new URLSearchParams({ from, to, limit: '8' });
+  if (state.scope) recentQs.set('scope', state.scope);
+  const { transactions } = await api.transactions(recentQs.toString());
   const recent = main.querySelector('#recent');
   recent.innerHTML =
     transactions.length === 0
@@ -364,9 +423,11 @@ async function viewDashboard(main) {
 
 /* ------------------------------------------------------------------ movimenti */
 async function viewMovimenti(main) {
-  const [{ categories }] = await Promise.all([api.categories()]);
+  const [{ categories }, { accounts }] = await Promise.all([api.categories(), api.accounts()]);
   state._categories = categories;
-  const filters = state._txFilters || { type: '', categoryId: '', month: startOfMonth(today()) };
+  state._accounts = accounts;
+  const filters =
+    state._txFilters || { type: '', categoryId: '', accountId: '', scope: '', month: startOfMonth(today()) };
   state._txFilters = filters;
 
   main.innerHTML = '';
@@ -393,6 +454,17 @@ async function viewMovimenti(main) {
               .map((c) => `<option value="${c.id}" ${String(filters.categoryId) === String(c.id) ? 'selected' : ''}>${escapeHtml(c.name)}</option>`)
               .join('')}
           </select>
+          <select id="f-acc">
+            <option value="">Tutti i conti</option>
+            ${accounts
+              .map((a) => `<option value="${a.id}" ${String(filters.accountId) === String(a.id) ? 'selected' : ''}>${escapeHtml(a.name)}</option>`)
+              .join('')}
+          </select>
+          <select id="f-scope">
+            <option value="">Personale + Casa</option>
+            <option value="personal" ${filters.scope === 'personal' ? 'selected' : ''}>Solo personale</option>
+            <option value="home" ${filters.scope === 'home' ? 'selected' : ''}>Solo casa</option>
+          </select>
         </div>
       </div>
       <div id="tx-list"></div>
@@ -405,6 +477,8 @@ async function viewMovimenti(main) {
   main.querySelector('#f-month').addEventListener('change', (e) => { filters.month = e.target.value; reload(); });
   main.querySelector('#f-type').addEventListener('change', (e) => { filters.type = e.target.value; reload(); });
   main.querySelector('#f-cat').addEventListener('change', (e) => { filters.categoryId = e.target.value; reload(); });
+  main.querySelector('#f-acc').addEventListener('change', (e) => { filters.accountId = e.target.value; reload(); });
+  main.querySelector('#f-scope').addEventListener('change', (e) => { filters.scope = e.target.value; reload(); });
 
   loadTxList(main);
 }
@@ -416,6 +490,8 @@ async function loadTxList(main) {
   const qs = new URLSearchParams({ from, to, limit: '500' });
   if (f.type) qs.set('type', f.type);
   if (f.categoryId) qs.set('categoryId', f.categoryId);
+  if (f.accountId) qs.set('accountId', f.accountId);
+  if (f.scope) qs.set('scope', f.scope);
 
   const list = main.querySelector('#tx-list');
   list.innerHTML = '<div class="boot"><div class="boot-mark"></div></div>';
@@ -461,6 +537,7 @@ async function loadTxList(main) {
 /* ------------------------------------------------------------------ categorie */
 async function viewCategorie(main) {
   const { categories } = await api.categories();
+  state._categories = null; // drop modal cache; it will refetch
   const groups = { expense: [], income: [] };
   categories.forEach((c) => groups[c.kind].push(c));
 
@@ -503,13 +580,13 @@ async function viewCategorie(main) {
   main.querySelector('#add-cat').addEventListener('click', () => openCatModal(null, () => viewCategorie(main)));
   main.querySelectorAll('.edit-cat').forEach((b) =>
     b.addEventListener('click', () => {
-      const id = Number(b.closest('.cat-row').dataset.id);
-      openCatModal(categories.find((c) => c.id === id), () => viewCategorie(main));
+      const id = b.closest('.cat-row').dataset.id;
+      openCatModal(categories.find((c) => String(c.id) === id), () => viewCategorie(main));
     })
   );
   main.querySelectorAll('.del-cat').forEach((b) =>
     b.addEventListener('click', async () => {
-      const id = Number(b.closest('.cat-row').dataset.id);
+      const id = b.closest('.cat-row').dataset.id;
       if (!confirm('Eliminare questa categoria? I movimenti collegati restano, senza categoria.')) return;
       try {
         await api.del(`/api/categories/${id}`);
@@ -520,6 +597,115 @@ async function viewCategorie(main) {
       }
     })
   );
+}
+
+/* ------------------------------------------------------------------ conti */
+async function viewConti(main) {
+  const { accounts } = await api.accounts();
+  state._accounts = null; // drop modal cache; it will refetch
+
+  main.innerHTML = '';
+  main.appendChild(
+    h(`
+    <div>
+      <div class="page-head">
+        <div><h1>Conti</h1><p>Da associare ai movimenti, come le categorie</p></div>
+        <button class="btn primary" id="add-acc">${icons.plus}<span>Nuovo</span></button>
+      </div>
+      <div class="card">
+        ${
+          accounts.length
+            ? accounts
+                .map(
+                  (acc) => `
+          <div class="cat-row" data-id="${acc.id}">
+            <span class="dot" style="background:${acc.color}"></span>
+            <span class="name">${escapeHtml(acc.name)}</span>
+            <span class="pill">${escapeHtml(ACCOUNT_KINDS[acc.kind] || acc.kind)}</span>
+            <span class="count">${acc.tx_count} mov.</span>
+            <button class="icon-btn edit-acc" aria-label="Modifica">${icons.edit}</button>
+            <button class="icon-btn del-acc" aria-label="Elimina">${icons.trash}</button>
+          </div>`
+                )
+                .join('')
+            : emptyState('Nessun conto. Creane uno (es. «Contanti», «Conto corrente»).')
+        }
+      </div>
+    </div>
+  `)
+  );
+
+  main.querySelector('#add-acc').addEventListener('click', () => openAccountModal(null, () => viewConti(main)));
+  main.querySelectorAll('.edit-acc').forEach((b) =>
+    b.addEventListener('click', () => {
+      const id = b.closest('.cat-row').dataset.id;
+      openAccountModal(accounts.find((a) => String(a.id) === id), () => viewConti(main));
+    })
+  );
+  main.querySelectorAll('.del-acc').forEach((b) =>
+    b.addEventListener('click', async () => {
+      const id = b.closest('.cat-row').dataset.id;
+      if (!confirm('Eliminare questo conto? I movimenti collegati restano, senza conto.')) return;
+      try {
+        await api.del(`/api/accounts/${id}`);
+        toast('Conto eliminato');
+        viewConti(main);
+      } catch (e) {
+        toast(e.message, 'error');
+      }
+    })
+  );
+}
+
+function openAccountModal(acc = null, onChange) {
+  const editing = !!acc;
+  const a = acc || { name: '', kind: 'bank', color: '#6c8cff' };
+  const { bd, close } = modal(`
+    <h2>${editing ? 'Modifica conto' : 'Nuovo conto'}</h2>
+    <form id="acc-form">
+      <div class="field">
+        <label for="aname">Nome</label>
+        <input id="aname" name="name" required maxlength="60" value="${escapeHtml(a.name)}" placeholder="Es. Conto corrente" />
+      </div>
+      <div class="row-2">
+        <div class="field">
+          <label for="akind">Tipo</label>
+          <select id="akind" name="kind">
+            ${Object.entries(ACCOUNT_KINDS)
+              .map(([v, l]) => `<option value="${v}" ${a.kind === v ? 'selected' : ''}>${l}</option>`)
+              .join('')}
+          </select>
+        </div>
+        <div class="field">
+          <label for="acolor">Colore</label>
+          <input id="acolor" name="color" type="color" value="${a.color}" style="height:44px;padding:4px" />
+        </div>
+      </div>
+      <span class="error" id="acc-err"></span>
+      <div class="modal-actions">
+        <button type="button" class="btn ghost" id="acc-cancel">Annulla</button>
+        <button type="submit" class="btn primary">${editing ? 'Salva' : 'Crea'}</button>
+      </div>
+    </form>
+  `);
+  const form = bd.querySelector('#acc-form');
+  form.querySelector('#acc-cancel').addEventListener('click', close);
+  form.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const fd = Object.fromEntries(new FormData(form));
+    const btn = form.querySelector('button[type=submit]');
+    btn.disabled = true;
+    try {
+      if (editing) await api.patch(`/api/accounts/${acc.id}`, { name: fd.name, kind: fd.kind, color: fd.color });
+      else await api.post('/api/accounts', { name: fd.name, kind: fd.kind, color: fd.color });
+      close();
+      toast(editing ? 'Conto aggiornato' : 'Conto creato');
+      onChange?.();
+    } catch (ex) {
+      form.querySelector('#acc-err').textContent = ex.details?.[0]?.message || ex.message;
+      btn.disabled = false;
+    }
+  });
 }
 
 /* ------------------------------------------------------------------ backup */
@@ -600,14 +786,41 @@ docker compose run --rm web npm run restore -- /app/backups/NOME_BACKUP --yes</c
 }
 
 /* ------------------------------------------------------------------ tx rows */
+function scopeBadge(scope) {
+  const s = SCOPES[scope];
+  if (!s) return '';
+  return `<span class="scope-badge ${scope}">${s.icon()}${s.short}</span>`;
+}
+
+function scopeSplitBlock(split) {
+  const s = split || { personal: { expense: 0 }, home: { expense: 0 } };
+  const pe = s.personal.expense || 0;
+  const he = s.home.expense || 0;
+  const tot = pe + he;
+  const pct = tot > 0 ? Math.round((pe / tot) * 100) : 50;
+  return `
+    <div class="split-bar" role="img" aria-label="Personale ${fmtEur(pe)}, Casa ${fmtEur(he)}">
+      <span style="width:${pct}%;background:var(--brand)"></span>
+      <span style="width:${100 - pct}%;background:var(--accent)"></span>
+    </div>
+    <div class="legend" style="margin-top:12px">
+      <div class="row"><span class="dot" style="background:var(--brand)"></span>Personale<span class="amt">${fmtEur(pe)}</span></div>
+      <div class="row"><span class="dot" style="background:var(--accent)"></span>Casa<span class="amt">${fmtEur(he)}</span></div>
+    </div>`;
+}
+
 function txRow(t) {
   const initial = (t.categoryName || '?').charAt(0).toUpperCase();
+  const sub = [t.categoryName || 'Senza categoria', t.accountName, dtfShort.format(parseISO(t.occurredOn))]
+    .filter(Boolean)
+    .map(escapeHtml)
+    .join(' · ');
   return `
     <div class="tx" data-id="${t.id}">
       <span class="swatch" style="background:${t.categoryColor || 'var(--ink-faint)'}">${escapeHtml(initial)}</span>
       <div class="meta">
-        <div class="name">${escapeHtml(t.note || t.categoryName || (t.type === 'income' ? 'Entrata' : 'Spesa'))}</div>
-        <div class="cat">${escapeHtml(t.categoryName || 'Senza categoria')} · ${escapeHtml(dtfShort.format(parseISO(t.occurredOn)))}</div>
+        <div class="name">${escapeHtml(t.note || t.categoryName || (t.type === 'income' ? 'Entrata' : 'Spesa'))} ${scopeBadge(t.scope)}</div>
+        <div class="cat">${sub}</div>
       </div>
       <span class="amount ${t.type}">${t.type === 'income' ? '+' : '−'}${fmtEur(t.amount)}</span>
       <span class="row-actions">
@@ -620,15 +833,15 @@ function txRow(t) {
 function bindTxRows(container, onChange) {
   container.querySelectorAll('.tx-edit').forEach((b) =>
     b.addEventListener('click', async () => {
-      const id = Number(b.closest('.tx').dataset.id);
+      const id = b.closest('.tx').dataset.id;
       const { transactions } = await api.transactions(`limit=500`);
-      const tx = transactions.find((t) => t.id === id);
+      const tx = transactions.find((t) => String(t.id) === id);
       openTxModal(tx, onChange);
     })
   );
   container.querySelectorAll('.tx-del').forEach((b) =>
     b.addEventListener('click', async () => {
-      const id = Number(b.closest('.tx').dataset.id);
+      const id = b.closest('.tx').dataset.id;
       if (!confirm('Eliminare questo movimento?')) return;
       try {
         await api.del(`/api/transactions/${id}`);
@@ -661,8 +874,18 @@ function modal(inner) {
 async function openTxModal(tx = null, onChange) {
   const cats = state._categories || (await api.categories()).categories;
   state._categories = cats;
+  const accounts = state._accounts || (await api.accounts()).accounts;
+  state._accounts = accounts;
   const editing = !!tx;
-  const t = tx || { type: 'expense', amount: '', categoryId: cats.find((c) => c.kind === 'expense')?.id, note: '', occurredOn: today() };
+  const t = tx || {
+    type: 'expense',
+    amount: '',
+    categoryId: cats.find((c) => c.kind === 'expense')?.id,
+    accountId: accounts[0]?.id ?? null,
+    scope: 'personal',
+    note: '',
+    occurredOn: today(),
+  };
 
   const { bd, close } = modal(`
     <h2>${editing ? 'Modifica movimento' : 'Nuovo movimento'}</h2>
@@ -682,9 +905,34 @@ async function openTxModal(tx = null, onChange) {
           <input id="occurredOn" name="occurredOn" type="date" required value="${t.occurredOn}" />
         </div>
       </div>
+      <div class="row-2">
+        <div class="field">
+          <label for="categoryId">Categoria</label>
+          <select id="categoryId" name="categoryId"></select>
+        </div>
+        <div class="field">
+          <label for="accountId">Conto</label>
+          <select id="accountId" name="accountId">
+            <option value="">Nessun conto</option>
+            ${accounts
+              .map(
+                (acc) =>
+                  `<option value="${acc.id}" ${String(acc.id) === String(t.accountId) ? 'selected' : ''}>${escapeHtml(acc.name)}</option>`
+              )
+              .join('')}
+          </select>
+        </div>
+      </div>
       <div class="field">
-        <label for="categoryId">Categoria</label>
-        <select id="categoryId" name="categoryId"></select>
+        <label>Ambito</label>
+        <label class="switch-row">
+          <span class="switch-label ${t.scope === 'personal' ? 'on' : ''}">${icons.person}Personale</span>
+          <span class="switch">
+            <input type="checkbox" id="scope" name="scope" ${t.scope === 'home' ? 'checked' : ''} />
+            <span class="switch-track"></span>
+          </span>
+          <span class="switch-label ${t.scope === 'home' ? 'on' : ''}">${icons.home}Casa</span>
+        </label>
       </div>
       <div class="field">
         <label for="note">Nota</label>
@@ -718,6 +966,15 @@ async function openTxModal(tx = null, onChange) {
     fillCats();
   });
 
+  const scopeInput = form.querySelector('#scope');
+  const scopeLabels = form.querySelectorAll('.switch-label');
+  const syncScope = () => {
+    const home = scopeInput.checked;
+    scopeLabels[0].classList.toggle('on', !home);
+    scopeLabels[1].classList.toggle('on', home);
+  };
+  scopeInput.addEventListener('change', syncScope);
+
   form.querySelector('#tx-cancel').addEventListener('click', close);
   form.querySelector('#tx-delete')?.addEventListener('click', async () => {
     if (!confirm('Eliminare questo movimento?')) return;
@@ -734,6 +991,8 @@ async function openTxModal(tx = null, onChange) {
       type,
       amount: Number(fd.amount),
       categoryId: fd.categoryId ? Number(fd.categoryId) : null,
+      accountId: fd.accountId ? Number(fd.accountId) : null,
+      scope: scopeInput.checked ? 'home' : 'personal',
       note: fd.note || '',
       occurredOn: fd.occurredOn,
     };

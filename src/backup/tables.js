@@ -12,7 +12,22 @@ module.exports = [
     columns: ['id', 'user_id', 'name', 'color', 'kind', 'created_at'],
   },
   {
+    name: 'accounts',
+    columns: ['id', 'user_id', 'name', 'kind', 'color', 'created_at'],
+  },
+  {
     name: 'transactions',
-    columns: ['id', 'user_id', 'type', 'amount_cents', 'category_id', 'note', 'occurred_on', 'created_at'],
+    columns: [
+      'id',
+      'user_id',
+      'type',
+      'amount_cents',
+      'category_id',
+      'account_id',
+      'scope',
+      'note',
+      'occurred_on',
+      'created_at',
+    ],
   },
 ];

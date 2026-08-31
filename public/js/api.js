@@ -41,8 +41,10 @@ export const api = {
   logout: () => request('POST', '/api/auth/logout'),
 
   // data
-  overview: (anchor) => request('GET', `/api/summary/overview${anchor ? `?anchor=${anchor}` : ''}`),
+  overview: (params = '') =>
+    request('GET', `/api/summary/overview${params ? `?${params}` : ''}`),
   transactions: (qs = '') => request('GET', `/api/transactions${qs ? `?${qs}` : ''}`),
   categories: () => request('GET', '/api/categories'),
+  accounts: () => request('GET', '/api/accounts'),
   backups: () => request('GET', '/api/backups'),
 };
