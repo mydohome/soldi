@@ -18,20 +18,31 @@ const PORT = Number(process.env.PORT || 3000);
 app.disable('x-powered-by');
 app.set('trust proxy', Number(process.env.TRUST_PROXY || 1));
 
+// Set HTTPS_ENABLED=true only when the app is actually reached over TLS
+// (directly or via an HTTPS reverse proxy). When false (the default), we must
+// NOT emit HSTS or `upgrade-insecure-requests`, otherwise a plain-HTTP
+// deployment (http://server:3010) has its own assets upgraded to https:// and
+// fails to load — the page would hang on the loading screen.
+const httpsEnabled = process.env.HTTPS_ENABLED === 'true';
+
+const cspDirectives = {
+  defaultSrc: ["'self'"],
+  scriptSrc: ["'self'"],
+  styleSrc: ["'self'", "'unsafe-inline'"],
+  imgSrc: ["'self'", 'data:'],
+  connectSrc: ["'self'"],
+  objectSrc: ["'none'"],
+  baseUri: ["'self'"],
+  frameAncestors: ["'none'"],
+  formAction: ["'self'"],
+};
+// Only force-upgrade to HTTPS when we know the app is served over HTTPS.
+if (httpsEnabled) cspDirectives.upgradeInsecureRequests = [];
+
 app.use(
   helmet({
-    contentSecurityPolicy: {
-      directives: {
-        defaultSrc: ["'self'"],
-        scriptSrc: ["'self'"],
-        styleSrc: ["'self'", "'unsafe-inline'"],
-        imgSrc: ["'self'", 'data:'],
-        connectSrc: ["'self'"],
-        objectSrc: ["'none'"],
-        baseUri: ["'self'"],
-        frameAncestors: ["'none'"],
-      },
-    },
+    contentSecurityPolicy: { useDefaults: false, directives: cspDirectives },
+    hsts: httpsEnabled,
   })
 );
 app.use(express.json({ limit: '256kb' }));

@@ -101,11 +101,13 @@ cd soldi && git pull && docker compose up -d --build
 
 Lo schema del database viene applicato automaticamente a ogni avvio (idempotente).
 
+**HTTP diretto** (`http://IP_SERVER:3010`): lascia `HTTPS_ENABLED=false` (default).
+
 **HTTPS / dominio:** metti l'app dietro un reverse proxy (nginx, Caddy, Traefik) che
 gestisce il certificato e inoltra a `127.0.0.1:3010`. In quel caso, nel `.env`:
 
 ```
-COOKIE_SECURE=true
+HTTPS_ENABLED=true
 ```
 
 **Backup fuori dal server:** la cartella `./backups` contiene i CSV settimanali.
@@ -127,7 +129,7 @@ Docker li riavvia da solo se il server si riavvia (basta che il servizio `docker
 |---|---|---|
 | `HOST_PORT` | `3000` | Porta pubblicata sull'host (es. `3010` su un server). L'app nel container resta sempre sulla 3000. |
 | `JWT_SECRET` | — (**obbligatorio**) | Segreto per firmare i cookie di sessione. Usa `openssl rand -hex 32`. |
-| `COOKIE_SECURE` | `false` | Metti `true` se servi l'app dietro HTTPS. |
+| `HTTPS_ENABLED` | `false` | `true` **solo** se l'app è raggiunta via HTTPS. Attiva HSTS, `upgrade-insecure-requests` e cookie `Secure`. In HTTP puro lascialo `false`, altrimenti la pagina resta bloccata su «Carico Soldi…». |
 | `TZ` | `Europe/Rome` | Fuso orario del container (influenza l'orario del backup). |
 | `PGUSER` / `PGPASSWORD` / `PGDATABASE` | `soldi` | Credenziali PostgreSQL. |
 | `BACKUP_ENABLED` | `true` | Abilita lo scheduler del backup automatico. |

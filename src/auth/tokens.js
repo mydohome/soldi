@@ -32,7 +32,7 @@ function cookieOptions() {
   return {
     httpOnly: true,
     sameSite: 'lax',
-    secure: process.env.COOKIE_SECURE === 'true',
+    secure: process.env.COOKIE_SECURE === 'true' || process.env.HTTPS_ENABLED === 'true',
     maxAge: TOKEN_TTL_SECONDS * 1000,
     path: '/',
   };

@@ -29,6 +29,10 @@ services:
       PGPASSWORD: ${PGPASSWORD:-soldi}
       PGDATABASE: ${PGDATABASE:-soldi}
       JWT_SECRET: ${JWT_SECRET:?imposta JWT_SECRET nel file .env}
+      # true solo se l'app è raggiunta via HTTPS (diretto o reverse proxy).
+      # Con false (default) niente HSTS né upgrade-insecure-requests: necessario
+      # per un deploy in HTTP puro (http://server:3010).
+      HTTPS_ENABLED: ${HTTPS_ENABLED:-false}
       COOKIE_SECURE: ${COOKIE_SECURE:-false}
       BACKUP_ENABLED: ${BACKUP_ENABLED:-true}
       BACKUP_CRON: ${BACKUP_CRON:-0 3 * * 0}
