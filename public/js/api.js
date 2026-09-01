@@ -46,5 +46,7 @@ export const api = {
   transactions: (qs = '') => request('GET', `/api/transactions${qs ? `?${qs}` : ''}`),
   categories: () => request('GET', '/api/categories'),
   accounts: () => request('GET', '/api/accounts'),
+  recurring: () => request('GET', '/api/recurring'),
+  runRecurring: () => request('POST', '/api/recurring/run'),
   backups: () => request('GET', '/api/backups'),
 };

@@ -156,11 +156,12 @@ button { cursor: pointer; }
     background: color-mix(in srgb, var(--bg-elev) 92%, transparent);
     backdrop-filter: blur(12px);
     border-top: 1px solid var(--line);
-    padding: 8px 6px calc(8px + env(safe-area-inset-bottom));
+    padding: 8px 2px calc(8px + env(safe-area-inset-bottom));
     z-index: 40;
   }
   .tabbar button {
     flex: 1;
+    min-width: 0;
     display: flex;
     flex-direction: column;
     align-items: center;
@@ -169,10 +170,16 @@ button { cursor: pointer; }
     border: none;
     padding: 6px 0;
     color: var(--ink-faint);
-    font-size: 0.68rem;
+    font-size: 0.64rem;
     font-weight: 600;
   }
-  .tabbar button svg { width: 22px; height: 22px; }
+  .tabbar button span {
+    max-width: 100%;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .tabbar button svg { width: 21px; height: 21px; }
   .tabbar button.active { color: var(--brand); }
 }
 
@@ -254,6 +261,12 @@ button { cursor: pointer; }
 .scope-badge svg { width: 11px; height: 11px; }
 .scope-badge.personal { background: color-mix(in srgb, var(--brand) 14%, transparent); color: var(--brand); }
 .scope-badge.home { background: color-mix(in srgb, var(--accent) 16%, transparent); color: var(--accent); }
+.scope-badge.fissa { background: color-mix(in srgb, var(--warn) 18%, transparent); color: var(--warn); }
+
+/* Dashboard KPI card: Personale / Casa sub-line */
+.stat-split { display: flex; gap: 14px; }
+.stat-split span { display: inline-flex; align-items: center; gap: 4px; }
+.stat-split svg { width: 12px; height: 12px; opacity: 0.8; }
 
 /* Toggle switch (Personale / Casa) */
 .switch-row { display: flex; align-items: center; gap: 12px; padding: 4px 0; }
@@ -541,6 +554,15 @@ code.block {
 .cat-row .dot { width: 14px; height: 14px; border-radius: 5px; flex: none; }
 .cat-row .name { font-weight: 600; }
 .cat-row .count { color: var(--ink-faint); font-size: 0.82rem; margin-left: auto; }
+.cat-row .meta .cat { color: var(--ink-faint); font-size: 0.8rem; }
+.cat-row .amount { font-weight: 700; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.cat-row .amount.expense { color: var(--expense); }
+.cat-row .amount.income { color: var(--income); }
+.cat-row.is-off { opacity: 0.5; }
+.cat-row.is-off .amount { color: var(--ink-faint); }
+.cat-row .switch { width: 42px; height: 24px; }
+.cat-row .switch-track::after { width: 18px; height: 18px; }
+.cat-row .switch input:checked + .switch-track::after { transform: translateX(18px); }
 
 .fab {
   position: fixed;

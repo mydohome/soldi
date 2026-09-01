@@ -44,6 +44,7 @@ function shape(row) {
     accountId: row.account_id,
     accountName: row.account_name,
     accountColor: row.account_color,
+    recurringRuleId: row.recurring_rule_id,
     scope: row.scope,
     note: row.note,
     occurredOn:

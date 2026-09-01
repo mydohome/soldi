@@ -16,6 +16,25 @@ module.exports = [
     columns: ['id', 'user_id', 'name', 'kind', 'color', 'created_at'],
   },
   {
+    name: 'recurring_rules',
+    columns: [
+      'id',
+      'user_id',
+      'name',
+      'type',
+      'amount_cents',
+      'category_id',
+      'account_id',
+      'scope',
+      'day_of_month',
+      'note',
+      'active',
+      'start_month',
+      'last_run_month',
+      'created_at',
+    ],
+  },
+  {
     name: 'transactions',
     columns: [
       'id',
@@ -24,6 +43,7 @@ module.exports = [
       'amount_cents',
       'category_id',
       'account_id',
+      'recurring_rule_id',
       'scope',
       'note',
       'occurred_on',

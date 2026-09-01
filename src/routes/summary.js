@@ -21,7 +21,12 @@ function scopeFilter(scope, nextParamIndex) {
   return { clause: ` AND t.scope = $${nextParamIndex}`, value: scope };
 }
 
-/** Totals (income / expense / net) for a [from, to] inclusive date window. */
+const net = (income, expense) => Number((income - expense).toFixed(2));
+
+/**
+ * Totals for a [from, to] inclusive window, always broken down by scope
+ * (personal / home) so the dashboard can show both plus the total.
+ */
 async function totals(userId, from, to, scope) {
   const sf = scopeFilter(scope, 4);
   const params = [userId, from, to];
@@ -29,14 +34,28 @@ async function totals(userId, from, to, scope) {
   const r = await query(
     `SELECT
        COALESCE(SUM(amount_cents) FILTER (WHERE type = 'income'), 0)  AS income,
-       COALESCE(SUM(amount_cents) FILTER (WHERE type = 'expense'), 0) AS expense
+       COALESCE(SUM(amount_cents) FILTER (WHERE type = 'expense'), 0) AS expense,
+       COALESCE(SUM(amount_cents) FILTER (WHERE type = 'income'  AND scope = 'personal'), 0) AS inc_p,
+       COALESCE(SUM(amount_cents) FILTER (WHERE type = 'expense' AND scope = 'personal'), 0) AS exp_p,
+       COALESCE(SUM(amount_cents) FILTER (WHERE type = 'income'  AND scope = 'home'), 0) AS inc_h,
+       COALESCE(SUM(amount_cents) FILTER (WHERE type = 'expense' AND scope = 'home'), 0) AS exp_h
      FROM transactions t
      WHERE user_id = $1 AND occurred_on BETWEEN $2 AND $3${sf.clause}`,
     params
   );
-  const income = euros(r.rows[0].income);
-  const expense = euros(r.rows[0].expense);
-  return { from, to, income, expense, net: Number((income - expense).toFixed(2)) };
+  const row = r.rows[0];
+  const income = euros(row.income);
+  const expense = euros(row.expense);
+  const mk = (i, e) => ({ income: euros(i), expense: euros(e), net: net(euros(i), euros(e)) });
+  return {
+    from,
+    to,
+    income,
+    expense,
+    net: net(income, expense),
+    personal: mk(row.inc_p, row.exp_p),
+    home: mk(row.inc_h, row.exp_h),
+  };
 }
 
 async function byCategory(userId, from, to, type, scope) {
