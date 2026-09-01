@@ -295,7 +295,7 @@ async function viewDashboard(main) {
     <div>
       <div class="page-head">
         <div>
-          <h1>Ciao ${escapeHtml(state.user.displayName || '')}</h1>
+          <h1>Ciao ${escapeHtml(state.user.displayName || '')} 👋</h1>
           <p>Il tuo quadro finanziario</p>
         </div>
         <div class="segment" id="period-seg">
@@ -305,36 +305,42 @@ async function viewDashboard(main) {
         </div>
       </div>
 
-      <div class="segment scope-seg" id="scope-seg" style="margin-bottom:14px">
-        <button data-s="" class="${state.scope === '' ? 'active' : ''}">Tutti</button>
-        <button data-s="personal" class="${state.scope === 'personal' ? 'active' : ''}">${icons.person}Personale</button>
-        <button data-s="home" class="${state.scope === 'home' ? 'active' : ''}">${icons.home}Casa</button>
+      <div class="dash-controls">
+        <div class="segment scope-seg" id="scope-seg">
+          <button data-s="" class="${state.scope === '' ? 'active' : ''}">Tutti</button>
+          <button data-s="personal" class="${state.scope === 'personal' ? 'active' : ''}">${icons.person}Personale</button>
+          <button data-s="home" class="${state.scope === 'home' ? 'active' : ''}">${icons.home}Casa</button>
+        </div>
+        <div class="period-nav">
+          <button class="icon-btn" id="prev" aria-label="Periodo precedente">${icons.chevronL}</button>
+          <span class="range">${escapeHtml(periodLabel(p, state.anchor))}</span>
+          <button class="icon-btn" id="next" aria-label="Periodo successivo">${icons.chevronR}</button>
+          <button class="btn ghost" id="today-btn">Oggi</button>
+        </div>
       </div>
 
-      <div class="period-nav" style="margin-bottom:18px">
-        <button class="icon-btn" id="prev" aria-label="Periodo precedente">${icons.chevronL}</button>
-        <span class="range">${escapeHtml(periodLabel(p, state.anchor))}</span>
-        <button class="icon-btn" id="next" aria-label="Periodo successivo">${icons.chevronR}</button>
-        <button class="btn ghost" id="today-btn" style="margin-left:6px">Oggi</button>
+      <div class="hero ${block.net >= 0 ? 'pos' : 'neg'}">
+        <div class="hero-bg" aria-hidden="true">${icons.wave}</div>
+        <span class="hero-label">Saldo ${p === 'day' ? 'del giorno' : p === 'week' ? 'della settimana' : 'del mese'}</span>
+        <span class="hero-value">${fmtEur(block.net)}</span>
+        <div class="hero-chips">
+          <span class="hero-chip up">${icons.arrowUp}Entrate ${fmtEur(block.income)}</span>
+          <span class="hero-chip down">${icons.arrowDown}Uscite ${fmtEur(block.expense)}</span>
+        </div>
       </div>
 
-      <div class="grid cols-3">
+      <div class="grid cols-2" style="margin-top:16px">
         <div class="card stat income">
-          <span class="label">Entrate</span>
+          <div class="stat-head"><span class="stat-ico">${icons.arrowUp}</span><span class="label">Entrate</span></div>
           <span class="value">${fmtEur(block.income)}</span>
           ${statSplit(block, 'income')}
           <div class="spark">${spark(trend.map((t) => t.income), { color: 'var(--income)' })}</div>
         </div>
         <div class="card stat expense">
-          <span class="label">Uscite</span>
+          <div class="stat-head"><span class="stat-ico">${icons.arrowDown}</span><span class="label">Uscite</span></div>
           <span class="value">${fmtEur(block.expense)}</span>
           ${statSplit(block, 'expense')}
           <div class="spark">${spark(trend.map((t) => t.expense), { color: 'var(--expense)' })}</div>
-        </div>
-        <div class="card stat">
-          <span class="label">Saldo</span>
-          <span class="value" style="color:${block.net >= 0 ? 'var(--income)' : 'var(--expense)'}">${fmtEur(block.net)}</span>
-          ${statSplit(block, 'net')}
         </div>
       </div>
 
@@ -790,20 +796,18 @@ async function openRecurringModal(rule = null, onChange) {
           <input id="rday" name="dayOfMonth" type="number" min="1" max="28" required value="${r.dayOfMonth}" />
         </div>
       </div>
-      <div class="row-2">
-        ${catField('rcat', 'Categoria', 'categoryId')}
-        <div class="field">
-          <label for="racc">Conto</label>
-          <select id="racc" name="accountId">
-            <option value="">Nessun conto</option>
-            ${accounts
-              .map(
-                (acc) =>
-                  `<option value="${acc.id}" ${String(acc.id) === String(r.accountId) ? 'selected' : ''}>${escapeHtml(acc.name)}</option>`
-              )
-              .join('')}
-          </select>
-        </div>
+      ${catField('rcat', 'Categoria', 'categoryId')}
+      <div class="field">
+        <label for="racc">Conto</label>
+        <select id="racc" name="accountId">
+          <option value="">Nessun conto</option>
+          ${accounts
+            .map(
+              (acc) =>
+                `<option value="${acc.id}" ${String(acc.id) === String(r.accountId) ? 'selected' : ''}>${escapeHtml(acc.name)}</option>`
+            )
+            .join('')}
+        </select>
       </div>
       <div class="field">
         <label>Ambito</label>
@@ -1529,20 +1533,18 @@ async function openTxModal(tx = null, onChange) {
           <input id="occurredOn" name="occurredOn" type="date" required value="${t.occurredOn}" />
         </div>
       </div>
-      <div class="row-2">
-        ${catField('categoryId')}
-        <div class="field">
-          <label for="accountId">Conto</label>
-          <select id="accountId" name="accountId">
-            <option value="">Nessun conto</option>
-            ${accounts
-              .map(
-                (acc) =>
-                  `<option value="${acc.id}" ${String(acc.id) === String(t.accountId) ? 'selected' : ''}>${escapeHtml(acc.name)}</option>`
-              )
-              .join('')}
-          </select>
-        </div>
+      ${catField('categoryId')}
+      <div class="field">
+        <label for="accountId">Conto</label>
+        <select id="accountId" name="accountId">
+          <option value="">Nessun conto</option>
+          ${accounts
+            .map(
+              (acc) =>
+                `<option value="${acc.id}" ${String(acc.id) === String(t.accountId) ? 'selected' : ''}>${escapeHtml(acc.name)}</option>`
+            )
+            .join('')}
+        </select>
       </div>
       <div class="field">
         <label>Ambito</label>

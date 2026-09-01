@@ -21,6 +21,9 @@ export const icons = {
   repeat: wrap('<polyline points="17 1 21 5 17 9"/><path d="M3 11V9a4 4 0 0 1 4-4h14"/><polyline points="7 23 3 19 7 15"/><path d="M21 13v2a4 4 0 0 1-4 4H3"/>'),
   play: wrap('<polygon points="6 4 20 12 6 20 6 4"/>'),
   target: wrap('<circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="5"/><circle cx="12" cy="12" r="1.4"/>'),
+  arrowUp: wrap('<line x1="12" y1="19" x2="12" y2="6"/><polyline points="6 12 12 6 18 12"/>'),
+  arrowDown: wrap('<line x1="12" y1="5" x2="12" y2="18"/><polyline points="6 12 12 18 18 12"/>'),
+  wave: wrap('<path d="M2 12c3 0 3-6 6-6s3 10 6 10 3-8 8-8"/>'),
 };
 
 export const logoMark = `
