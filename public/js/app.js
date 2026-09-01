@@ -1,9 +1,23 @@
 import { api } from './api.js';
-import { donut, bars, spark, fmtEur, escapeHtml } from './charts.js';
+import { donut, bars, budgetBars, spark, fmtEur, escapeHtml } from './charts.js';
 import { icons, logoMark } from './icons.js';
 
 const root = document.getElementById('app');
-const state = { user: null, view: 'dashboard', anchor: today(), period: 'month', scope: '' };
+const state = {
+  user: null,
+  view: 'dashboard',
+  anchor: today(),
+  period: 'month',
+  scope: '',
+  forecastYear: new Date().getUTCFullYear(),
+  forecastIncludeRec: true,
+};
+
+const MONTHS_SHORT = ['Gen', 'Feb', 'Mar', 'Apr', 'Mag', 'Giu', 'Lug', 'Ago', 'Set', 'Ott', 'Nov', 'Dic'];
+const MONTHS_LONG = [
+  'gennaio', 'febbraio', 'marzo', 'aprile', 'maggio', 'giugno',
+  'luglio', 'agosto', 'settembre', 'ottobre', 'novembre', 'dicembre',
+];
 
 // scope: '' = tutti, 'personal' = personali, 'home' = casa
 const SCOPES = {
@@ -180,8 +194,9 @@ function renderAuth() {
 
 /* ------------------------------------------------------------------ shell */
 const NAV = [
-  { id: 'dashboard', label: 'Dashboard', icon: icons.dashboard },
-  { id: 'movimenti', label: 'Movimenti', icon: icons.list },
+  { id: 'dashboard', label: 'Dashboard', short: 'Home', icon: icons.dashboard },
+  { id: 'movimenti', label: 'Movimenti', short: 'Movim.', icon: icons.list },
+  { id: 'previsioni', label: 'Previsioni', short: 'Prev.', icon: icons.target },
   { id: 'fisse', label: 'Spese fisse', short: 'Fisse', icon: icons.repeat },
   { id: 'categorie', label: 'Categorie', short: 'Cat.', icon: icons.tag },
   { id: 'conti', label: 'Conti', icon: icons.bank },
@@ -244,6 +259,7 @@ function renderView() {
   ({
     dashboard: viewDashboard,
     movimenti: viewMovimenti,
+    previsioni: viewPrevisioni,
     fisse: viewSpeseFisse,
     categorie: viewCategorie,
     conti: viewConti,
@@ -771,10 +787,7 @@ async function openRecurringModal(rule = null, onChange) {
         </div>
       </div>
       <div class="row-2">
-        <div class="field">
-          <label for="rcat">Categoria</label>
-          <select id="rcat" name="categoryId"></select>
-        </div>
+        ${catField('rcat', 'Categoria', 'categoryId')}
         <div class="field">
           <label for="racc">Conto</label>
           <select id="racc" name="accountId">
@@ -821,22 +834,23 @@ async function openRecurringModal(rule = null, onChange) {
   const form = bd.querySelector('#rec-form');
   let type = r.type;
   const catSel = form.querySelector('#rcat');
-  const fillCats = () => {
+  const fillCats = (sel = r.categoryId) => {
     const opts = cats.filter((c) => c.kind === type);
     catSel.innerHTML =
       '<option value="">Senza categoria</option>' +
       opts
-        .map((c) => `<option value="${c.id}" ${String(c.id) === String(r.categoryId) ? 'selected' : ''}>${escapeHtml(c.name)}</option>`)
+        .map((c) => `<option value="${c.id}" ${String(c.id) === String(sel) ? 'selected' : ''}>${escapeHtml(c.name)}</option>`)
         .join('');
   };
   fillCats();
+  wireQuickCat(form, { selectId: 'rcat', cats, getKind: () => type, refill: fillCats });
 
   form.querySelector('#rtype-seg').addEventListener('click', (e) => {
     const b = e.target.closest('button');
     if (!b) return;
     type = b.dataset.t;
     form.querySelectorAll('#rtype-seg button').forEach((x) => x.classList.toggle('active', x === b));
-    fillCats();
+    fillCats(catSel.value || r.categoryId);
   });
 
   const scopeInput = form.querySelector('#rscope');
@@ -876,6 +890,310 @@ async function openRecurringModal(rule = null, onChange) {
       onChange?.();
     } catch (ex) {
       form.querySelector('#rec-err').textContent = ex.details?.[0]?.message || ex.message;
+      btn.disabled = false;
+    }
+  });
+}
+
+/* ------------------------------------------------------------------ previsioni */
+async function viewPrevisioni(main) {
+  const y = state.forecastYear;
+  const qs = new URLSearchParams({ year: y, includeRecurring: state.forecastIncludeRec });
+  if (state.scope) qs.set('scope', state.scope);
+
+  let sum, planned;
+  try {
+    [sum, { planned }] = await Promise.all([api.plannedSummary(qs.toString()), api.planned()]);
+  } catch (e) {
+    main.innerHTML = `<div class="empty">${escapeHtml(e.message)}</div>`;
+    return;
+  }
+  state._categories = null;
+
+  const overBudget = sum.projectedYearEnd > sum.totalPlanned + 0.005;
+  const monthsForChart = sum.months.map((m) => ({
+    label: MONTHS_SHORT[m.month - 1],
+    planned: m.planned,
+    actual: m.actual,
+  }));
+
+  const catRows = sum.byCategory
+    .filter((c) => c.planned > 0 || c.actual > 0)
+    .map((c) => {
+      const pct = c.planned > 0 ? Math.min(150, Math.round((c.actual / c.planned) * 100)) : 0;
+      const over = c.planned > 0 && c.actual > c.planned + 0.005;
+      return `
+        <div class="cat-row">
+          <span class="dot" style="background:${c.color}"></span>
+          <div class="meta" style="flex:1;min-width:0">
+            <div class="name">${escapeHtml(c.name)}</div>
+            <div class="budget-bar"><span style="width:${Math.min(100, pct)}%;background:${
+              over ? 'var(--expense)' : 'var(--accent)'
+            }"></span></div>
+          </div>
+          <div style="text-align:right;white-space:nowrap">
+            <div style="font-weight:700;font-variant-numeric:tabular-nums">${fmtEur(c.actual)}</div>
+            <div class="count">/ ${c.planned > 0 ? fmtEur(c.planned) : '—'}</div>
+          </div>
+        </div>`;
+    })
+    .join('');
+
+  const itemRow = (p) => `
+    <div class="cat-row ${p.active ? '' : 'is-off'}" data-id="${p.id}">
+      <span class="dot" style="background:${p.categoryColor || 'var(--brand)'}"></span>
+      <div class="meta" style="flex:1;min-width:0">
+        <div class="name">${escapeHtml(p.name)} ${scopeBadge(p.scope)}</div>
+        <div class="cat">${
+          p.cadence === 'monthly' ? 'ogni mese' : 'a ' + MONTHS_LONG[(p.month || 1) - 1]
+        }${p.categoryName ? ' · ' + escapeHtml(p.categoryName) : ''}</div>
+      </div>
+      <span class="amount expense">${fmtEur(p.amount)}${p.cadence === 'monthly' ? '/mese' : '/anno'}</span>
+      <label class="switch" title="${p.active ? 'Attiva' : 'Disattivata'}">
+        <input type="checkbox" class="pl-toggle" ${p.active ? 'checked' : ''} />
+        <span class="switch-track"></span>
+      </label>
+      <button class="icon-btn edit-pl" aria-label="Modifica">${icons.edit}</button>
+      <button class="icon-btn del-pl" aria-label="Elimina">${icons.trash}</button>
+    </div>`;
+
+  main.innerHTML = '';
+  main.appendChild(
+    h(`
+    <div>
+      <div class="page-head">
+        <div><h1>Previsioni</h1><p>Budget e proiezione delle spese annuali</p></div>
+        <button class="btn primary" id="add-pl">${icons.plus}<span>Nuova voce</span></button>
+      </div>
+
+      <div class="period-nav" style="margin-bottom:14px">
+        <button class="icon-btn" id="y-prev" aria-label="Anno precedente">${icons.chevronL}</button>
+        <span class="range" style="min-width:90px">${y}</span>
+        <button class="icon-btn" id="y-next" aria-label="Anno successivo">${icons.chevronR}</button>
+        <label class="switch-row" style="margin-left:14px">
+          <span class="switch">
+            <input type="checkbox" id="inc-rec" ${state.forecastIncludeRec ? 'checked' : ''} />
+            <span class="switch-track"></span>
+          </span>
+          <span class="switch-label ${state.forecastIncludeRec ? 'on' : ''}">Includi spese fisse</span>
+        </label>
+      </div>
+
+      <div class="grid cols-3">
+        <div class="card stat">
+          <span class="label">Totale previsto ${y}</span>
+          <span class="value">${fmtEur(sum.totalPlanned)}</span>
+          <span class="sub">${state.forecastIncludeRec ? 'incl. spese fisse' : 'solo spese previste'}</span>
+        </div>
+        <div class="card stat expense">
+          <span class="label">Speso ${y}</span>
+          <span class="value">${fmtEur(sum.totalActual)}</span>
+          <span class="sub">movimenti reali</span>
+        </div>
+        <div class="card stat">
+          <span class="label">Proiezione fine ${y}</span>
+          <span class="value" style="color:${overBudget ? 'var(--expense)' : 'var(--income)'}">${fmtEur(sum.projectedYearEnd)}</span>
+          <span class="sub">${
+            overBudget
+              ? '+' + fmtEur(sum.projectedYearEnd - sum.totalPlanned) + ' sopra il budget'
+              : fmtEur(sum.totalPlanned - sum.projectedYearEnd) + ' sotto il budget'
+          }</span>
+        </div>
+      </div>
+
+      <div class="card card-pad chart-card" style="margin-top:16px">
+        <h3>Previsto contro speso</h3>
+        <p class="hint">Per mese · <span style="color:var(--brand)">previsto</span> / <span style="color:var(--accent)">speso</span></p>
+        ${budgetBars(monthsForChart)}
+      </div>
+
+      <h2 class="section-title">Per categoria</h2>
+      <div class="card">${catRows || emptyState('Aggiungi voci previste per vedere il confronto.')}</div>
+
+      <h2 class="section-title">Voci previste</h2>
+      <div class="card" id="pl-list">
+        ${planned.length ? planned.map(itemRow).join('') : emptyState('Nessuna voce. Aggiungi affitto, assicurazioni, tasse, spesa media…')}
+      </div>
+      <p class="muted" style="font-size:.82rem;margin-top:10px">
+        Le voci previste sono assunzioni di budget (non creano movimenti). Le <strong>spese fisse</strong>
+        già create possono essere incluse nella previsione con l'interruttore qui sopra.
+      </p>
+    </div>
+  `)
+  );
+
+  main.querySelector('#y-prev').addEventListener('click', () => {
+    state.forecastYear--;
+    viewPrevisioni(main);
+  });
+  main.querySelector('#y-next').addEventListener('click', () => {
+    state.forecastYear++;
+    viewPrevisioni(main);
+  });
+  main.querySelector('#inc-rec').addEventListener('change', (e) => {
+    state.forecastIncludeRec = e.target.checked;
+    viewPrevisioni(main);
+  });
+  main.querySelector('#add-pl').addEventListener('click', () => openPlannedModal(null, () => viewPrevisioni(main)));
+  main.querySelectorAll('.pl-toggle').forEach((cb) =>
+    cb.addEventListener('change', async () => {
+      const id = cb.closest('.cat-row').dataset.id;
+      try {
+        await api.patch(`/api/planned/${id}`, { active: cb.checked });
+        viewPrevisioni(main);
+      } catch (ex) {
+        toast(ex.message, 'error');
+        cb.checked = !cb.checked;
+      }
+    })
+  );
+  main.querySelectorAll('.edit-pl').forEach((b) =>
+    b.addEventListener('click', () => {
+      const id = b.closest('.cat-row').dataset.id;
+      openPlannedModal(planned.find((p) => String(p.id) === id), () => viewPrevisioni(main));
+    })
+  );
+  main.querySelectorAll('.del-pl').forEach((b) =>
+    b.addEventListener('click', async () => {
+      const id = b.closest('.cat-row').dataset.id;
+      if (!confirm('Eliminare questa voce prevista?')) return;
+      try {
+        await api.del(`/api/planned/${id}`);
+        toast('Voce eliminata');
+        viewPrevisioni(main);
+      } catch (ex) {
+        toast(ex.message, 'error');
+      }
+    })
+  );
+}
+
+async function openPlannedModal(item = null, onChange) {
+  const cats = state._categories || (await api.categories()).categories;
+  state._categories = cats;
+  const editing = !!item;
+  const p = item || {
+    name: '',
+    amount: '',
+    categoryId: cats.find((c) => c.kind === 'expense')?.id,
+    scope: 'personal',
+    cadence: 'monthly',
+    month: new Date().getUTCMonth() + 1,
+    note: '',
+    active: true,
+  };
+
+  const { bd, close } = modal(`
+    <h2>${editing ? 'Modifica voce prevista' : 'Nuova voce prevista'}</h2>
+    <form id="pl-form">
+      <div class="field">
+        <label for="pname">Nome</label>
+        <input id="pname" name="name" required maxlength="80" value="${escapeHtml(p.name)}"
+               placeholder="Es. Affitto, Assicurazione auto, Tasse" />
+      </div>
+      <div class="segment" id="pcad-seg" style="margin-bottom:14px">
+        <button type="button" data-c="monthly" class="${p.cadence === 'monthly' ? 'active' : ''}">Ogni mese</button>
+        <button type="button" data-c="yearly" class="${p.cadence === 'yearly' ? 'active' : ''}">Una volta l'anno</button>
+      </div>
+      <div class="row-2">
+        <div class="field">
+          <label for="pamount">Importo (€)</label>
+          <input id="pamount" name="amount" type="number" step="0.01" min="0.01" required
+                 inputmode="decimal" value="${p.amount || ''}" />
+        </div>
+        <div class="field" id="pmonth-field" ${p.cadence === 'yearly' ? '' : 'hidden'}>
+          <label for="pmonth">Mese</label>
+          <select id="pmonth" name="month">
+            ${MONTHS_LONG.map(
+              (m, i) => `<option value="${i + 1}" ${p.month === i + 1 ? 'selected' : ''}>${capitalize(m)}</option>`
+            ).join('')}
+          </select>
+        </div>
+      </div>
+      ${catField('pcat', 'Categoria', 'categoryId')}
+      <div class="field">
+        <label>Ambito</label>
+        <label class="switch-row">
+          <span class="switch-label ${p.scope === 'personal' ? 'on' : ''}">${icons.person}Personale</span>
+          <span class="switch">
+            <input type="checkbox" id="pscope" ${p.scope === 'home' ? 'checked' : ''} />
+            <span class="switch-track"></span>
+          </span>
+          <span class="switch-label ${p.scope === 'home' ? 'on' : ''}">${icons.home}Casa</span>
+        </label>
+      </div>
+      <div class="field">
+        <label for="pnote">Nota</label>
+        <input id="pnote" name="note" maxlength="280" value="${escapeHtml(p.note || '')}" placeholder="Facoltativa" />
+      </div>
+      <label class="switch-row" style="margin-bottom:4px">
+        <span class="switch">
+          <input type="checkbox" id="pactive" ${p.active ? 'checked' : ''} />
+          <span class="switch-track"></span>
+        </span>
+        <span class="switch-label on">Attiva</span>
+      </label>
+      <span class="error" id="pl-err"></span>
+      <div class="modal-actions">
+        <button type="button" class="btn ghost" id="pl-cancel">Annulla</button>
+        <button type="submit" class="btn primary">${editing ? 'Salva' : 'Crea'}</button>
+      </div>
+    </form>
+  `);
+
+  const form = bd.querySelector('#pl-form');
+  let cadence = p.cadence;
+  const pcat = form.querySelector('#pcat');
+  const fillCats = (sel = p.categoryId) => {
+    pcat.innerHTML =
+      '<option value="">Senza categoria</option>' +
+      cats
+        .filter((c) => c.kind === 'expense')
+        .map((c) => `<option value="${c.id}" ${String(c.id) === String(sel) ? 'selected' : ''}>${escapeHtml(c.name)}</option>`)
+        .join('');
+  };
+  fillCats();
+  wireQuickCat(form, { selectId: 'pcat', cats, getKind: () => 'expense', refill: fillCats });
+
+  form.querySelector('#pcad-seg').addEventListener('click', (e) => {
+    const b = e.target.closest('button');
+    if (!b) return;
+    cadence = b.dataset.c;
+    form.querySelectorAll('#pcad-seg button').forEach((x) => x.classList.toggle('active', x === b));
+    form.querySelector('#pmonth-field').hidden = cadence !== 'yearly';
+  });
+
+  const scopeInput = form.querySelector('#pscope');
+  const scopeLabels = form.querySelectorAll('.switch-label');
+  scopeInput.addEventListener('change', () => {
+    scopeLabels[0].classList.toggle('on', !scopeInput.checked);
+    scopeLabels[1].classList.toggle('on', scopeInput.checked);
+  });
+
+  form.querySelector('#pl-cancel').addEventListener('click', close);
+  form.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const fd = Object.fromEntries(new FormData(form));
+    const body = {
+      name: fd.name,
+      amount: Number(fd.amount),
+      cadence,
+      month: cadence === 'yearly' ? Number(fd.month) : null,
+      categoryId: fd.categoryId ? Number(fd.categoryId) : null,
+      scope: scopeInput.checked ? 'home' : 'personal',
+      note: fd.note || '',
+      active: form.querySelector('#pactive').checked,
+    };
+    const btn = form.querySelector('button[type=submit]');
+    btn.disabled = true;
+    try {
+      if (editing) await api.patch(`/api/planned/${item.id}`, body);
+      else await api.post('/api/planned', body);
+      close();
+      toast(editing ? 'Voce aggiornata' : 'Voce creata');
+      onChange?.();
+    } catch (ex) {
+      form.querySelector('#pl-err').textContent = ex.details?.[0]?.message || ex.message;
       btn.disabled = false;
     }
   });
@@ -1203,10 +1521,7 @@ async function openTxModal(tx = null, onChange) {
         </div>
       </div>
       <div class="row-2">
-        <div class="field">
-          <label for="categoryId">Categoria</label>
-          <select id="categoryId" name="categoryId"></select>
-        </div>
+        ${catField('categoryId')}
         <div class="field">
           <label for="accountId">Conto</label>
           <select id="accountId" name="accountId">
@@ -1247,20 +1562,21 @@ async function openTxModal(tx = null, onChange) {
   const form = bd.querySelector('#tx-form');
   let type = t.type;
   const catSelect = form.querySelector('#categoryId');
-  const fillCats = () => {
+  const fillCats = (sel = t.categoryId) => {
     const opts = cats.filter((c) => c.kind === type);
     catSelect.innerHTML =
       '<option value="">Senza categoria</option>' +
-      opts.map((c) => `<option value="${c.id}" ${String(c.id) === String(t.categoryId) ? 'selected' : ''}>${escapeHtml(c.name)}</option>`).join('');
+      opts.map((c) => `<option value="${c.id}" ${String(c.id) === String(sel) ? 'selected' : ''}>${escapeHtml(c.name)}</option>`).join('');
   };
   fillCats();
+  wireQuickCat(form, { selectId: 'categoryId', cats, getKind: () => type, refill: fillCats });
 
   form.querySelector('#type-seg').addEventListener('click', (e) => {
     const b = e.target.closest('button');
     if (!b) return;
     type = b.dataset.t;
     form.querySelectorAll('#type-seg button').forEach((x) => x.classList.toggle('active', x === b));
-    fillCats();
+    fillCats(catSelect.value || t.categoryId);
   });
 
   const scopeInput = form.querySelector('#scope');
@@ -1305,6 +1621,62 @@ async function openTxModal(tx = null, onChange) {
     } catch (ex) {
       form.querySelector('#tx-err').textContent = ex.details?.[0]?.message || ex.message;
       btn.disabled = false;
+    }
+  });
+}
+
+/**
+ * Category <select> with an inline "+ new category" panel, for use inside other
+ * modals. `catField(id)` renders the markup; `wireQuickCat` binds it.
+ */
+function catField(id, label = 'Categoria', name = id) {
+  return `
+    <div class="field">
+      <label for="${id}">${label}</label>
+      <div class="with-add">
+        <select id="${id}" name="${name}"></select>
+        <button type="button" class="icon-btn qc-add" data-for="${id}" aria-label="Nuova categoria">${icons.plus}</button>
+      </div>
+      <div class="quick-cat" data-for="${id}" hidden>
+        <input class="qc-name" maxlength="60" placeholder="Nome nuova categoria" />
+        <input class="qc-color" type="color" value="#6c8cff" aria-label="Colore" />
+        <button type="button" class="btn primary qc-save">OK</button>
+      </div>
+    </div>`;
+}
+
+function wireQuickCat(form, { selectId, cats, getKind, refill }) {
+  const addBtn = form.querySelector(`.qc-add[data-for="${selectId}"]`);
+  const panel = form.querySelector(`.quick-cat[data-for="${selectId}"]`);
+  if (!addBtn || !panel) return;
+  const nameInput = panel.querySelector('.qc-name');
+  addBtn.addEventListener('click', () => {
+    panel.hidden = !panel.hidden;
+    if (!panel.hidden) nameInput.focus();
+  });
+  nameInput.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') {
+      e.preventDefault();
+      panel.querySelector('.qc-save').click();
+    }
+  });
+  panel.querySelector('.qc-save').addEventListener('click', async () => {
+    const name = nameInput.value.trim();
+    if (!name) return nameInput.focus();
+    try {
+      const { category } = await api.post('/api/categories', {
+        name,
+        color: panel.querySelector('.qc-color').value,
+        kind: getKind(),
+      });
+      cats.push({ ...category, tx_count: 0 });
+      state._categories = null; // invalidate shared cache
+      panel.hidden = true;
+      nameInput.value = '';
+      refill(category.id);
+      toast('Categoria creata');
+    } catch (ex) {
+      toast(ex.details?.[0]?.message || ex.message, 'error');
     }
   });
 }

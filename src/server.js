@@ -64,6 +64,7 @@ app.use('/api/transactions', require('./routes/transactions'));
 app.use('/api/categories', require('./routes/categories'));
 app.use('/api/accounts', require('./routes/accounts'));
 app.use('/api/recurring', require('./routes/recurring'));
+app.use('/api/planned', require('./routes/planned'));
 app.use('/api/summary', require('./routes/summary'));
 app.use('/api/backups', require('./routes/backups'));
 

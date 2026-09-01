@@ -86,7 +86,7 @@ button { cursor: pointer; }
   position: sticky;
   top: 0;
   height: 100dvh;
-  padding: 22px 16px;
+  padding: calc(22px + env(safe-area-inset-top)) 16px 22px;
   background: var(--bg-elev);
   border-right: 1px solid var(--line);
   display: flex;
@@ -131,16 +131,26 @@ button { cursor: pointer; }
   margin: 0 auto;
 }
 
+
 .page-head {
   display: flex;
   align-items: flex-end;
   justify-content: space-between;
-  gap: 16px;
+  gap: 12px 16px;
   margin-bottom: 22px;
   flex-wrap: wrap;
 }
+.page-head > div:first-child { min-width: 0; flex: 1 1 auto; }
 .page-head h1 { font-size: 1.6rem; letter-spacing: -0.02em; }
 .page-head p { color: var(--ink-faint); font-size: 0.9rem; }
+.page-head .btn { flex: none; white-space: nowrap; }
+.page-head > div:last-child { flex: none; }
+@media (max-width: 560px) {
+  .page-head { align-items: center; }
+  .page-head h1 { font-size: 1.3rem; }
+  .page-head p { font-size: 0.82rem; }
+  .page-head .btn { padding: 9px 12px; }
+}
 
 /* ---------- Bottom nav (mobile) ---------- */
 .tabbar { display: none; }
@@ -148,29 +158,33 @@ button { cursor: pointer; }
 @media (max-width: 860px) {
   .shell { grid-template-columns: 1fr; }
   .sidebar { display: none; }
-  .main { padding: 20px 16px 96px; }
+  .main { padding: calc(20px + env(safe-area-inset-top)) 16px 96px; }
   .tabbar {
     display: flex;
     position: fixed;
     left: 0; right: 0; bottom: 0;
-    background: color-mix(in srgb, var(--bg-elev) 92%, transparent);
+    background: color-mix(in srgb, var(--bg-elev) 94%, transparent);
     backdrop-filter: blur(12px);
     border-top: 1px solid var(--line);
     padding: 8px 2px calc(8px + env(safe-area-inset-bottom));
     z-index: 40;
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+    scrollbar-width: none;
   }
+  .tabbar::-webkit-scrollbar { display: none; }
   .tabbar button {
-    flex: 1;
-    min-width: 0;
+    flex: 1 0 auto;
+    min-width: 14.2vw;
     display: flex;
     flex-direction: column;
     align-items: center;
     gap: 3px;
     background: none;
     border: none;
-    padding: 6px 0;
+    padding: 6px 2px;
     color: var(--ink-faint);
-    font-size: 0.64rem;
+    font-size: 0.62rem;
     font-weight: 600;
   }
   .tabbar button span {
@@ -305,6 +319,35 @@ button { cursor: pointer; }
 .switch input:checked + .switch-track::after { transform: translateX(20px); }
 .switch input:focus-visible + .switch-track { box-shadow: 0 0 0 3px color-mix(in srgb, var(--brand) 30%, transparent); }
 
+/* Category select with inline "+ new category" */
+.with-add { display: flex; gap: 8px; align-items: center; }
+.with-add select { flex: 1; min-width: 0; }
+.with-add .qc-add { flex: none; }
+.quick-cat {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  flex-wrap: wrap;
+  margin-top: 8px;
+  padding: 8px;
+  background: var(--bg-sunken);
+  border-radius: var(--radius-sm);
+}
+.quick-cat .qc-name { flex: 1 1 140px; min-width: 0; }
+.quick-cat input[type="color"] { width: 40px; height: 38px; padding: 3px; flex: none; }
+.quick-cat .qc-save { flex: none; padding: 8px 12px; }
+
+/* Budget progress bar (Previsioni) */
+.budget-bar {
+  height: 7px;
+  border-radius: 999px;
+  background: var(--bg-sunken);
+  overflow: hidden;
+  margin-top: 6px;
+  max-width: 260px;
+}
+.budget-bar span { display: block; height: 100%; border-radius: 999px; }
+
 /* Personale vs Casa proportion bar */
 .split-bar {
   display: flex;
@@ -315,7 +358,7 @@ button { cursor: pointer; }
 }
 .split-bar span { display: block; height: 100%; }
 
-.period-nav { display: flex; align-items: center; gap: 10px; }
+.period-nav { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
 .period-nav .range { font-weight: 600; font-size: 0.95rem; min-width: 190px; text-align: center; }
 .icon-btn {
   width: 36px; height: 36px;
@@ -412,6 +455,7 @@ button { cursor: pointer; }
   border: 1px solid var(--line);
   background: var(--bg);
   outline: none;
+  font-size: 16px; /* iOS: <16px triggers auto-zoom on focus */
 }
 .field input:focus, .field select:focus, .field textarea:focus {
   border-color: var(--brand);
@@ -419,6 +463,7 @@ button { cursor: pointer; }
 }
 .field .error { color: var(--expense); font-size: 0.8rem; }
 .row-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+@media (max-width: 560px) { .row-2 { grid-template-columns: 1fr; } }
 
 /* ---------- Modal ---------- */
 .modal-backdrop {
@@ -448,7 +493,7 @@ button { cursor: pointer; }
   min-height: 100dvh;
   display: grid;
   place-items: center;
-  padding: 20px;
+  padding: calc(20px + env(safe-area-inset-top)) 20px calc(20px + env(safe-area-inset-bottom));
   position: relative;
   overflow: hidden;
 }
@@ -540,7 +585,7 @@ code.block {
   border-radius: var(--radius-sm);
   border: 1px solid var(--line);
   background: var(--bg-elev);
-  font-size: 0.85rem;
+  font-size: 16px;
 }
 
 .cat-row {

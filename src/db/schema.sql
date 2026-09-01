@@ -48,6 +48,22 @@ CREATE TABLE IF NOT EXISTS recurring_rules (
   created_at     TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
+-- Spese previste: voci di budget per la previsione annuale.
+-- 'monthly' = ogni mese; 'yearly' = una volta l'anno nel mese indicato.
+CREATE TABLE IF NOT EXISTS planned_expenses (
+  id           BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+  user_id      BIGINT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  name         TEXT NOT NULL,
+  category_id  BIGINT REFERENCES categories(id) ON DELETE SET NULL,
+  scope        TEXT NOT NULL DEFAULT 'personal' CHECK (scope IN ('personal', 'home')),
+  amount_cents BIGINT NOT NULL CHECK (amount_cents > 0),
+  cadence      TEXT NOT NULL DEFAULT 'monthly' CHECK (cadence IN ('monthly', 'yearly')),
+  month        INT CHECK (month BETWEEN 1 AND 12),
+  active       BOOLEAN NOT NULL DEFAULT true,
+  note         TEXT NOT NULL DEFAULT '',
+  created_at   TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
 CREATE TABLE IF NOT EXISTS transactions (
   id                BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
   user_id           BIGINT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
@@ -86,3 +102,4 @@ CREATE INDEX IF NOT EXISTS idx_tx_user_scope ON transactions (user_id, scope);
 CREATE INDEX IF NOT EXISTS idx_cat_user ON categories (user_id);
 CREATE INDEX IF NOT EXISTS idx_acc_user ON accounts (user_id);
 CREATE INDEX IF NOT EXISTS idx_rec_user ON recurring_rules (user_id);
+CREATE INDEX IF NOT EXISTS idx_planned_user ON planned_expenses (user_id);
