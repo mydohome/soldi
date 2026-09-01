@@ -38,7 +38,14 @@ async function createBackup({ root = BACKUP_ROOT, keep = KEEP, label = 'auto' } 
     const { rows } = await pool.query(
       `SELECT ${table.columns.join(', ')} FROM ${table.name} ORDER BY id`
     );
-    const csv = stringify(rows, { header: true, columns: table.columns, cast: { date: (v) => v.toISOString() } });
+    const csv = stringify(rows, {
+      header: true,
+      columns: table.columns,
+      cast: {
+        date: (v) => v.toISOString(),
+        boolean: (v) => (v ? 'true' : 'false'),
+      },
+    });
     const file = path.join(dir, `${table.name}.csv`);
     fs.writeFileSync(file, csv, 'utf8');
     manifest.tables[table.name] = { rows: rows.length, file: `${table.name}.csv` };

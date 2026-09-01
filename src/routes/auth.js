@@ -10,6 +10,7 @@ const { COOKIE_NAME, signSession, cookieOptions } = require('../auth/tokens');
 const { requireAuth } = require('../auth/middleware');
 const { handler, httpError } = require('../http/validate');
 const defaultCategories = require('../data/default-categories');
+const defaultAccounts = require('../data/default-accounts');
 
 const router = express.Router();
 
@@ -57,6 +58,12 @@ router.post(
         await client.query(
           `INSERT INTO categories (user_id, name, color, kind) VALUES ($1, $2, $3, $4)`,
           [row.id, c.name, c.color, c.kind]
+        );
+      }
+      for (const a of defaultAccounts) {
+        await client.query(
+          `INSERT INTO accounts (user_id, name, kind, color) VALUES ($1, $2, $3, $4)`,
+          [row.id, a.name, a.kind, a.color]
         );
       }
       return row;

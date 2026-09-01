@@ -11,6 +11,7 @@ const rateLimit = require('express-rate-limit');
 const { pool } = require('./db/pool');
 const { migrate } = require('./db/migrate');
 const { startBackupScheduler } = require('./backup/scheduler');
+const { startRecurringScheduler } = require('./recurring/scheduler');
 
 const app = express();
 const PORT = Number(process.env.PORT || 3000);
@@ -61,6 +62,8 @@ app.get('/api/health', async (req, res) => {
 app.use('/api/auth', require('./routes/auth'));
 app.use('/api/transactions', require('./routes/transactions'));
 app.use('/api/categories', require('./routes/categories'));
+app.use('/api/accounts', require('./routes/accounts'));
+app.use('/api/recurring', require('./routes/recurring'));
 app.use('/api/summary', require('./routes/summary'));
 app.use('/api/backups', require('./routes/backups'));
 
@@ -76,6 +79,7 @@ app.get('*', (req, res) => res.sendFile(path.join(publicDir, 'index.html')));
 async function start() {
   await migrate();
   startBackupScheduler();
+  startRecurringScheduler();
   app.listen(PORT, () => console.log(`[soldi] listening on :${PORT}`));
 }
 

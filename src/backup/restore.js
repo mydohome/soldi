@@ -30,18 +30,28 @@ function resolveBackupDir(arg) {
   return path.join(BACKUP_ROOT, candidates[candidates.length - 1]);
 }
 
+// Reads <table>.csv and returns { columns, rows }. Only the columns actually
+// present in the CSV header are used, so a backup taken by an older version
+// (missing a table or some columns) still restores — the DB defaults fill the
+// gaps. A missing file is treated as an empty table with a warning.
 function readTableCsv(dir, table) {
   const file = path.join(dir, `${table.name}.csv`);
-  if (!fs.existsSync(file)) throw new Error(`Missing ${table.name}.csv in backup`);
+  if (!fs.existsSync(file)) {
+    console.warn(`[restore]   ${table.name}.csv not in backup — skipping (older backup format?)`);
+    return { columns: [], rows: [] };
+  }
   const records = parse(fs.readFileSync(file, 'utf8'), { columns: true, skip_empty_lines: true });
-  return records.map((rec) =>
-    table.columns.map((col) => {
+  const present = records.length
+    ? table.columns.filter((col) => col in records[0])
+    : table.columns;
+  const rows = records.map((rec) =>
+    present.map((col) => {
       const raw = rec[col];
-      if (raw === undefined) return null;
-      if (raw === '' && !KEEP_EMPTY.has(col)) return null;
+      if (raw === undefined || raw === '') return raw === '' && KEEP_EMPTY.has(col) ? '' : null;
       return raw;
     })
   );
+  return { columns: present, rows };
 }
 
 async function confirm(question) {
@@ -75,18 +85,21 @@ async function main() {
     return;
   }
 
-  const parsed = TABLES.map((table) => ({ table, rows: readTableCsv(dir, table) }));
+  const parsed = TABLES.map((table) => {
+    const { columns, rows } = readTableCsv(dir, table);
+    return { table, columns, rows };
+  });
 
   await withTransaction(async (client) => {
     await client.query(
       `TRUNCATE ${TABLES.map((t) => t.name).join(', ')} RESTART IDENTITY CASCADE`
     );
 
-    for (const { table, rows } of parsed) {
+    for (const { table, columns, rows } of parsed) {
       if (rows.length === 0) continue;
-      const colList = table.columns.join(', ');
+      const colList = columns.join(', ');
       // insert in chunks to keep parameter counts sane
-      const CHUNK = Math.max(1, Math.floor(60000 / table.columns.length));
+      const CHUNK = Math.max(1, Math.floor(60000 / columns.length));
       for (let i = 0; i < rows.length; i += CHUNK) {
         const slice = rows.slice(i, i + CHUNK);
         const values = [];

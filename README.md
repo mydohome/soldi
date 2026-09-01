@@ -31,8 +31,11 @@ Funziona da smartphone e da desktop (interfaccia responsive), gira interamente c
 | | |
 |---|---|
 | 👤 **Account** | Registrazione con email + password (hash `bcrypt`), sessione via cookie firmato `httpOnly`. Rate limiting sui tentativi di login. |
-| 💰 **Movimenti** | Entrate e uscite con importo, data, nota e categoria. Modifica ed eliminazione. |
+| 💰 **Movimenti** | Entrate e uscite con importo, data, nota, categoria, **conto** e **ambito** (personale / casa). Modifica ed eliminazione. |
 | 🏷️ **Categorie** | Personalizzabili per colore e tipo (spesa/entrata). 11 categorie predefinite alla registrazione. |
+| 🏦 **Conti** | Contanti, conto corrente, carta… da associare ai movimenti come le categorie. 3 conti predefiniti alla registrazione. |
+| 🏠 **Personale / Casa** | Ogni movimento ha un ambito; la dashboard mostra Personale, Casa e Totale affiancati, e c'è un filtro dedicato. |
+| 🔁 **Spese fisse** | Regole ricorrenti (mutuo, finanziamento, addebiti, stipendio…) che generano un movimento al mese finché sono attive. Recupero automatico dopo downtime. |
 | 📊 **Riepiloghi** | Totali entrate / uscite / saldo per **giorno**, **settimana** (lun–dom) e **mese**, con navigazione avanti/indietro. |
 | 📈 **Grafici** | Donut per categoria e barre entrate/uscite (SVG originali, nessuna libreria esterna). |
 | 🗄️ **Backup** | CSV automatico ogni settimana + backup manuale on‑demand dall'interfaccia. |
@@ -137,16 +140,28 @@ Docker li riavvia da solo se il server si riavvia (basta che il servizio `docker
 | `BACKUP_ENABLED` | `true` | Abilita lo scheduler del backup automatico. |
 | `BACKUP_CRON` | `0 3 * * 0` | Quando eseguire il backup (domenica 03:00). |
 | `BACKUP_KEEP` | `8` | Quanti backup conservare prima di eliminare i più vecchi. |
+| `RECURRING_ENABLED` | `true` | Abilita la generazione automatica delle spese fisse. |
+| `RECURRING_CRON` | `5 6 * * *` | Quando controllare le spese fisse dovute (+ sempre all'avvio). |
 
 ---
 
 ## Uso
 
-- **Dashboard** — scegli il periodo (Giorno / Settimana / Mese) e naviga con le frecce.
-  Vedi entrate, uscite, saldo, ripartizione per categoria e andamento.
-- **Movimenti** — elenco completo con filtri per mese, tipo e categoria; pulsante **+** per aggiungere.
+- **Dashboard** — scegli il periodo (Giorno / Settimana / Mese) e l'ambito (Tutti / Personale / Casa),
+  naviga con le frecce. Vedi entrate, uscite, saldo, ripartizione per categoria e per conto,
+  split Personale/Casa e andamento.
+- **Movimenti** — elenco completo con filtri per mese, tipo, categoria, conto e ambito;
+  pulsante **+** per aggiungere. Ogni movimento ha uno switch **Personale / Casa**.
+- **Spese fisse** — regole ricorrenti (mutuo, rata, abbonamento, stipendio…). Ogni regola
+  crea un movimento al mese il giorno scelto, finché è **attiva**. Lo switch nella lista la
+  disattiva senza toccare lo storico; «Esegui adesso» forza il controllo. I movimenti generati
+  hanno il badge «fissa» e restano modificabili. All'avvio l'app recupera i mesi arretrati
+  (utile dopo un fermo del server); riattivando una regola **non** si recuperano i mesi in cui
+  era spenta.
 - **Categorie** — crea, rinomina, cambia colore o elimina. Eliminando una categoria i movimenti
   collegati **restano** (diventano «senza categoria»).
+- **Conti** — stessa cosa per i conti (contanti, conto corrente, carta…). Eliminando un conto
+  i movimenti collegati restano «senza conto».
 - **Backup** — elenco dei backup disponibili e pulsante **Crea backup adesso**.
 
 ---
@@ -251,10 +266,13 @@ soldi/
 │   ├── server.js           # Express, sicurezza (helmet), rotte, SPA fallback
 │   ├── db/
 │   │   ├── pool.js          # pool pg condiviso + helper transazioni
-│   │   ├── schema.sql       # schema idempotente
+│   │   ├── schema.sql       # schema idempotente (+ ALTER additivi per DB esistenti)
 │   │   └── migrate.js       # applica lo schema all'avvio
 │   ├── auth/                # hashing password, token di sessione, middleware
-│   ├── routes/              # auth, transactions, categories, summary, backups
+│   ├── routes/              # auth, transactions, categories, accounts, recurring, summary, backups
+│   ├── recurring/
+│   │   ├── generate.js      # crea i movimenti dovuti dalle regole attive
+│   │   └── scheduler.js     # catch-up all'avvio + cron giornaliero
 │   └── backup/
 │       ├── backup-core.js   # scrittura CSV + pruning
 │       ├── scheduler.js     # cron settimanale
@@ -285,13 +303,16 @@ Tutte sotto `/api`, JSON, autenticazione via cookie di sessione.
 | `POST` | `/api/auth/login` | Login |
 | `POST` | `/api/auth/logout` | Logout |
 | `GET`  | `/api/auth/me` | Utente corrente |
-| `GET`  | `/api/transactions` | Lista (filtri: `from`, `to`, `type`, `categoryId`, `limit`, `offset`) |
-| `POST` | `/api/transactions` | Crea movimento |
+| `GET`  | `/api/transactions` | Lista (filtri: `from`, `to`, `type`, `categoryId`, `accountId`, `scope`, `limit`, `offset`) |
+| `POST` | `/api/transactions` | Crea movimento (`accountId`, `scope` opzionali) |
 | `PATCH`| `/api/transactions/:id` | Modifica |
 | `DELETE`| `/api/transactions/:id` | Elimina |
 | `GET`/`POST`/`PATCH`/`DELETE` | `/api/categories` | Gestione categorie |
-| `GET`  | `/api/summary/overview?anchor=YYYY-MM-DD` | Riepiloghi giorno/settimana/mese + grafici |
-| `GET`  | `/api/summary/range?from&to&group=day\|week\|month` | Serie temporale aggregata |
+| `GET`/`POST`/`PATCH`/`DELETE` | `/api/accounts` | Gestione conti |
+| `GET`/`POST`/`PATCH`/`DELETE` | `/api/recurring` | Gestione spese fisse (`DELETE ?keepMovimenti=true` tiene i movimenti già generati) |
+| `POST` | `/api/recurring/run` | Genera subito i movimenti fissi dovuti |
+| `GET`  | `/api/summary/overview?anchor=YYYY-MM-DD&scope=personal\|home` | Riepiloghi giorno/settimana/mese, split Personale/Casa, ripartizione per conto |
+| `GET`  | `/api/summary/range?from&to&group=day\|week\|month&scope=` | Serie temporale aggregata |
 | `GET`  | `/api/backups` | Elenco backup |
 | `POST` | `/api/backups` | Crea backup adesso |
 | `GET`  | `/api/health` | Stato servizio |
