@@ -18,6 +18,7 @@ Funziona da smartphone e da desktop (interfaccia responsive), gira interamente c
 - [Deploy su un server (Debian)](#deploy-su-un-server-debian)
 - [Configurazione (.env)](#configurazione-env)
 - [Uso](#uso)
+- [Installare come app su iPhone/Android](#installare-come-app-su-iphoneandroid)
 - [Backup automatico](#backup-automatico)
 - [Ripristino di emergenza](#ripristino-di-emergenza-disaster-recovery)
 - [Architettura](#architettura)
@@ -36,6 +37,8 @@ Funziona da smartphone e da desktop (interfaccia responsive), gira interamente c
 | 🏦 **Conti** | Contanti, conto corrente, carta… da associare ai movimenti come le categorie. 3 conti predefiniti alla registrazione. |
 | 🏠 **Personale / Casa** | Ogni movimento ha un ambito; la dashboard mostra Personale, Casa e Totale affiancati, e c'è un filtro dedicato. |
 | 🔁 **Spese fisse** | Regole ricorrenti (mutuo, finanziamento, addebiti, stipendio…) che generano un movimento al mese finché sono attive. Recupero automatico dopo downtime. |
+| 🎯 **Previsioni** | Voci di budget mensili/annuali → previsione delle spese dell'anno, proiezione a fine anno e confronto con lo speso reale, per categoria e per ambito. |
+| 📱 **Installabile** | PWA: da iPhone/Android *Aggiungi a Home* e si apre a tutto schermo con icona propria. |
 | 📊 **Riepiloghi** | Totali entrate / uscite / saldo per **giorno**, **settimana** (lun–dom) e **mese**, con navigazione avanti/indietro. |
 | 📈 **Grafici** | Donut per categoria e barre entrate/uscite (SVG originali, nessuna libreria esterna). |
 | 🗄️ **Backup** | CSV automatico ogni settimana + backup manuale on‑demand dall'interfaccia. |
@@ -151,7 +154,13 @@ Docker li riavvia da solo se il server si riavvia (basta che il servizio `docker
   naviga con le frecce. Vedi entrate, uscite, saldo, ripartizione per categoria e per conto,
   split Personale/Casa e andamento.
 - **Movimenti** — elenco completo con filtri per mese, tipo, categoria, conto e ambito;
-  pulsante **+** per aggiungere. Ogni movimento ha uno switch **Personale / Casa**.
+  pulsante **+** per aggiungere. Ogni movimento ha uno switch **Personale / Casa** e si può
+  **creare una categoria al volo** dal form (pulsante `+` accanto al menu Categoria).
+- **Previsioni** — voci di budget: importo **mensile** o **una volta l'anno** (con il mese),
+  categoria e ambito. La pagina mostra, per l'anno scelto, il **totale previsto**, lo **speso**
+  reale, la **proiezione a fine anno** (mesi passati = reale, futuri = previsto) e il confronto
+  previsto/speso per mese e per categoria. Con un interruttore includi anche le **spese fisse**
+  nella previsione. Le voci previste non creano movimenti.
 - **Spese fisse** — regole ricorrenti (mutuo, rata, abbonamento, stipendio…). Ogni regola
   crea un movimento al mese il giorno scelto, finché è **attiva**. Lo switch nella lista la
   disattiva senza toccare lo storico; «Esegui adesso» forza il controllo. I movimenti generati
@@ -163,6 +172,21 @@ Docker li riavvia da solo se il server si riavvia (basta che il servizio `docker
 - **Conti** — stessa cosa per i conti (contanti, conto corrente, carta…). Eliminando un conto
   i movimenti collegati restano «senza conto».
 - **Backup** — elenco dei backup disponibili e pulsante **Crea backup adesso**.
+
+---
+
+## Installare come app su iPhone/Android
+
+L'app è una **PWA**: si aggiunge alla schermata Home e si apre a tutto schermo con la sua icona.
+
+- **iPhone/iPad (Safari):** apri l'app → pulsante **Condividi** → **Aggiungi a Home**.
+- **Android (Chrome):** menu ⋮ → **Installa app** / **Aggiungi a schermata Home**.
+
+Non serve un app store e non c'è funzionamento offline: i dati restano sul server, quindi
+serve la connessione al server per caricare o salvare movimenti.
+
+> Su HTTP puro l'installazione funziona; alcuni browser mostrano il prompt "Installa" solo
+> in HTTPS — in quel caso usa comunque *Aggiungi a Home* dal menu Condividi.
 
 ---
 
@@ -269,7 +293,7 @@ soldi/
 │   │   ├── schema.sql       # schema idempotente (+ ALTER additivi per DB esistenti)
 │   │   └── migrate.js       # applica lo schema all'avvio
 │   ├── auth/                # hashing password, token di sessione, middleware
-│   ├── routes/              # auth, transactions, categories, accounts, recurring, summary, backups
+│   ├── routes/              # auth, transactions, categories, accounts, recurring, planned, summary, backups
 │   ├── recurring/
 │   │   ├── generate.js      # crea i movimenti dovuti dalle regole attive
 │   │   └── scheduler.js     # catch-up all'avvio + cron giornaliero
@@ -311,6 +335,8 @@ Tutte sotto `/api`, JSON, autenticazione via cookie di sessione.
 | `GET`/`POST`/`PATCH`/`DELETE` | `/api/accounts` | Gestione conti |
 | `GET`/`POST`/`PATCH`/`DELETE` | `/api/recurring` | Gestione spese fisse (`DELETE ?keepMovimenti=true` tiene i movimenti già generati) |
 | `POST` | `/api/recurring/run` | Genera subito i movimenti fissi dovuti |
+| `GET`/`POST`/`PATCH`/`DELETE` | `/api/planned` | Gestione voci di budget (spese previste) |
+| `GET`  | `/api/planned/summary?year=YYYY&includeRecurring=true\|false&scope=` | Previsione annuale: totali, proiezione, per mese/categoria/ambito |
 | `GET`  | `/api/summary/overview?anchor=YYYY-MM-DD&scope=personal\|home` | Riepiloghi giorno/settimana/mese, split Personale/Casa, ripartizione per conto |
 | `GET`  | `/api/summary/range?from&to&group=day\|week\|month&scope=` | Serie temporale aggregata |
 | `GET`  | `/api/backups` | Elenco backup |

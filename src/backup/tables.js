@@ -35,6 +35,22 @@ module.exports = [
     ],
   },
   {
+    name: 'planned_expenses',
+    columns: [
+      'id',
+      'user_id',
+      'name',
+      'category_id',
+      'scope',
+      'amount_cents',
+      'cadence',
+      'month',
+      'active',
+      'note',
+      'created_at',
+    ],
+  },
+  {
     name: 'transactions',
     columns: [
       'id',
