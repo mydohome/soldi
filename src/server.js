@@ -67,6 +67,7 @@ app.use('/api/recurring', require('./routes/recurring'));
 app.use('/api/planned', require('./routes/planned'));
 app.use('/api/summary', require('./routes/summary'));
 app.use('/api/backups', require('./routes/backups'));
+app.use('/api/settings', require('./routes/settings'));
 
 app.use('/api', (req, res) => res.status(404).json({ error: 'not_found' }));
 

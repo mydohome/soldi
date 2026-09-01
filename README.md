@@ -41,7 +41,8 @@ Funziona da smartphone e da desktop (interfaccia responsive), gira interamente c
 | 📱 **Installabile** | PWA: da iPhone/Android *Aggiungi a Home* e si apre a tutto schermo con icona propria. |
 | 📊 **Riepiloghi** | Totali entrate / uscite / saldo per **giorno**, **settimana** (lun–dom) e **mese**, con navigazione avanti/indietro. |
 | 📈 **Grafici** | Donut per categoria e barre entrate/uscite (SVG originali, nessuna libreria esterna). |
-| 🗄️ **Backup** | CSV automatico ogni settimana + backup manuale on‑demand dall'interfaccia. |
+| 🗄️ **Backup** | CSV automatico ogni settimana + backup manuale on‑demand (in **Impostazioni**). |
+| ⬆️ **Aggiornamento dall'app** | In **Impostazioni**: controlla e installa l'ultima versione da git (`SELF_UPDATE_ENABLED=true`). |
 | ♻️ **Ripristino** | Comando singolo che ricarica i dati da un backup CSV. |
 | 🎨 **UI** | Design moderno, tema chiaro/scuro automatico, elementi grafici originali. |
 
@@ -111,6 +112,11 @@ In alternativa, a mano: `git pull && docker compose up -d --build`.
 Lo schema del database viene applicato automaticamente a ogni avvio (idempotente).
 Non serve `docker compose down -v` (cancellerebbe i dati).
 
+**Aggiornare dall'app:** metti `SELF_UPDATE_ENABLED=true` nel `.env` e riavvia una volta.
+Poi da **Impostazioni → Aggiorna** l'app fa `git pull` + riavvio da sola (le modifiche al
+`Dockerfile` restano da fare con `./scripts/update.sh`). Il repo sul server dev'essere
+di proprietà dell'utente con UID 1000 (di solito il primo utente); altrimenti usa lo script.
+
 **HTTP diretto** (`http://IP_SERVER:3010`): lascia `HTTPS_ENABLED=false` (default).
 
 **HTTPS / dominio:** metti l'app dietro un reverse proxy (nginx, Caddy, Traefik) che
@@ -147,6 +153,7 @@ Docker li riavvia da solo se il server si riavvia (basta che il servizio `docker
 | `BACKUP_KEEP` | `8` | Quanti backup conservare prima di eliminare i più vecchi. |
 | `RECURRING_ENABLED` | `true` | Abilita la generazione automatica delle spese fisse. |
 | `RECURRING_CRON` | `5 6 * * *` | Quando controllare le spese fisse dovute (+ sempre all'avvio). |
+| `SELF_UPDATE_ENABLED` | `false` | `true` = il pulsante **Aggiorna** in Impostazioni fa `git pull` + riavvio del container (senza rebuild). Le modifiche al `Dockerfile` richiedono comunque `./scripts/update.sh`. |
 
 ---
 
@@ -173,7 +180,9 @@ Docker li riavvia da solo se il server si riavvia (basta che il servizio `docker
   collegati **restano** (diventano «senza categoria»).
 - **Conti** — stessa cosa per i conti (contanti, conto corrente, carta…). Eliminando un conto
   i movimenti collegati restano «senza conto».
-- **Backup** — elenco dei backup disponibili e pulsante **Crea backup adesso**.
+- **Impostazioni** — versione installata e **aggiornamento dall'app** (controlla / installa
+  l'ultima versione da git, se `SELF_UPDATE_ENABLED=true`); **backup** (elenco, «Crea backup
+  adesso», istruzioni di ripristino).
 
 ---
 
@@ -295,7 +304,7 @@ soldi/
 │   │   ├── schema.sql       # schema idempotente (+ ALTER additivi per DB esistenti)
 │   │   └── migrate.js       # applica lo schema all'avvio
 │   ├── auth/                # hashing password, token di sessione, middleware
-│   ├── routes/              # auth, transactions, categories, accounts, recurring, planned, summary, backups
+│   ├── routes/              # auth, transactions, categories, accounts, recurring, planned, summary, backups, settings
 │   ├── recurring/
 │   │   ├── generate.js      # crea i movimenti dovuti dalle regole attive
 │   │   └── scheduler.js     # catch-up all'avvio + cron giornaliero
@@ -343,6 +352,9 @@ Tutte sotto `/api`, JSON, autenticazione via cookie di sessione.
 | `GET`  | `/api/summary/range?from&to&group=day\|week\|month&scope=` | Serie temporale aggregata |
 | `GET`  | `/api/backups` | Elenco backup |
 | `POST` | `/api/backups` | Crea backup adesso |
+| `GET`  | `/api/settings/version` | Versione installata (SHA git) |
+| `GET`  | `/api/settings/check-update` | Confronta con `origin/main` |
+| `POST` | `/api/settings/update` | `git pull` + riavvio (se `SELF_UPDATE_ENABLED=true`) |
 | `GET`  | `/api/health` | Stato servizio |
 
 ---

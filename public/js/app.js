@@ -200,7 +200,7 @@ const NAV = [
   { id: 'fisse', label: 'Spese fisse', short: 'Fisse', icon: icons.repeat },
   { id: 'categorie', label: 'Categorie', short: 'Cat.', icon: icons.tag },
   { id: 'conti', label: 'Conti', icon: icons.bank },
-  { id: 'backup', label: 'Backup', icon: icons.archive },
+  { id: 'impostazioni', label: 'Impostazioni', short: 'Impost.', icon: icons.settings },
 ];
 
 function currentView() {
@@ -263,7 +263,7 @@ function renderView() {
     fisse: viewSpeseFisse,
     categorie: viewCategorie,
     conti: viewConti,
-    backup: viewBackup,
+    impostazioni: viewImpostazioni,
   }[state.view])(main);
 }
 
@@ -295,7 +295,7 @@ async function viewDashboard(main) {
     <div>
       <div class="page-head">
         <div>
-          <h1>Ciao ${escapeHtml(state.user.displayName || '')}</h1>
+          <h1>Ciao ${escapeHtml(state.user.displayName || '')} 👋</h1>
           <p>Il tuo quadro finanziario</p>
         </div>
         <div class="segment" id="period-seg">
@@ -305,36 +305,42 @@ async function viewDashboard(main) {
         </div>
       </div>
 
-      <div class="segment scope-seg" id="scope-seg" style="margin-bottom:14px">
-        <button data-s="" class="${state.scope === '' ? 'active' : ''}">Tutti</button>
-        <button data-s="personal" class="${state.scope === 'personal' ? 'active' : ''}">${icons.person}Personale</button>
-        <button data-s="home" class="${state.scope === 'home' ? 'active' : ''}">${icons.home}Casa</button>
+      <div class="dash-controls">
+        <div class="segment scope-seg" id="scope-seg">
+          <button data-s="" class="${state.scope === '' ? 'active' : ''}">Tutti</button>
+          <button data-s="personal" class="${state.scope === 'personal' ? 'active' : ''}">${icons.person}Personale</button>
+          <button data-s="home" class="${state.scope === 'home' ? 'active' : ''}">${icons.home}Casa</button>
+        </div>
+        <div class="period-nav">
+          <button class="icon-btn" id="prev" aria-label="Periodo precedente">${icons.chevronL}</button>
+          <span class="range">${escapeHtml(periodLabel(p, state.anchor))}</span>
+          <button class="icon-btn" id="next" aria-label="Periodo successivo">${icons.chevronR}</button>
+          <button class="btn ghost" id="today-btn">Oggi</button>
+        </div>
       </div>
 
-      <div class="period-nav" style="margin-bottom:18px">
-        <button class="icon-btn" id="prev" aria-label="Periodo precedente">${icons.chevronL}</button>
-        <span class="range">${escapeHtml(periodLabel(p, state.anchor))}</span>
-        <button class="icon-btn" id="next" aria-label="Periodo successivo">${icons.chevronR}</button>
-        <button class="btn ghost" id="today-btn" style="margin-left:6px">Oggi</button>
+      <div class="hero ${block.net >= 0 ? 'pos' : 'neg'}">
+        <div class="hero-bg" aria-hidden="true">${icons.wave}</div>
+        <span class="hero-label">Saldo ${p === 'day' ? 'del giorno' : p === 'week' ? 'della settimana' : 'del mese'}</span>
+        <span class="hero-value">${fmtEur(block.net)}</span>
+        <div class="hero-chips">
+          <span class="hero-chip up">${icons.arrowUp}Entrate ${fmtEur(block.income)}</span>
+          <span class="hero-chip down">${icons.arrowDown}Uscite ${fmtEur(block.expense)}</span>
+        </div>
       </div>
 
-      <div class="grid cols-3">
+      <div class="grid cols-2" style="margin-top:16px">
         <div class="card stat income">
-          <span class="label">Entrate</span>
+          <div class="stat-head"><span class="stat-ico">${icons.arrowUp}</span><span class="label">Entrate</span></div>
           <span class="value">${fmtEur(block.income)}</span>
           ${statSplit(block, 'income')}
           <div class="spark">${spark(trend.map((t) => t.income), { color: 'var(--income)' })}</div>
         </div>
         <div class="card stat expense">
-          <span class="label">Uscite</span>
+          <div class="stat-head"><span class="stat-ico">${icons.arrowDown}</span><span class="label">Uscite</span></div>
           <span class="value">${fmtEur(block.expense)}</span>
           ${statSplit(block, 'expense')}
           <div class="spark">${spark(trend.map((t) => t.expense), { color: 'var(--expense)' })}</div>
-        </div>
-        <div class="card stat">
-          <span class="label">Saldo</span>
-          <span class="value" style="color:${block.net >= 0 ? 'var(--income)' : 'var(--expense)'}">${fmtEur(block.net)}</span>
-          ${statSplit(block, 'net')}
         </div>
       </div>
 
@@ -790,20 +796,18 @@ async function openRecurringModal(rule = null, onChange) {
           <input id="rday" name="dayOfMonth" type="number" min="1" max="28" required value="${r.dayOfMonth}" />
         </div>
       </div>
-      <div class="row-2">
-        ${catField('rcat', 'Categoria', 'categoryId')}
-        <div class="field">
-          <label for="racc">Conto</label>
-          <select id="racc" name="accountId">
-            <option value="">Nessun conto</option>
-            ${accounts
-              .map(
-                (acc) =>
-                  `<option value="${acc.id}" ${String(acc.id) === String(r.accountId) ? 'selected' : ''}>${escapeHtml(acc.name)}</option>`
-              )
-              .join('')}
-          </select>
-        </div>
+      ${catField('rcat', 'Categoria', 'categoryId')}
+      <div class="field">
+        <label for="racc">Conto</label>
+        <select id="racc" name="accountId">
+          <option value="">Nessun conto</option>
+          ${accounts
+            .map(
+              (acc) =>
+                `<option value="${acc.id}" ${String(acc.id) === String(r.accountId) ? 'selected' : ''}>${escapeHtml(acc.name)}</option>`
+            )
+            .join('')}
+        </select>
       </div>
       <div class="field">
         <label>Ambito</label>
@@ -1317,21 +1321,46 @@ function openAccountModal(acc = null, onChange) {
   });
 }
 
-/* ------------------------------------------------------------------ backup */
-async function viewBackup(main) {
-  let payload;
+/* ------------------------------------------------------------------ impostazioni */
+async function viewImpostazioni(main) {
+  let payload, version;
   try {
-    payload = await api.backups();
+    [payload, version] = await Promise.all([api.backups(), api.version()]);
   } catch (e) {
     main.innerHTML = `<div class="empty">${escapeHtml(e.message)}</div>`;
     return;
   }
+  const verLabel = version.shaShort
+    ? version.shaShort + (version.committedAt ? ' · ' + new Date(version.committedAt).toLocaleDateString('it-IT') : '')
+    : 'sconosciuta';
+
   main.innerHTML = '';
   main.appendChild(
     h(`
     <div>
       <div class="page-head">
-        <div><h1>Backup</h1><p>Copie CSV dei tuoi dati</p></div>
+        <div><h1>Impostazioni</h1><p>Aggiornamenti e backup</p></div>
+      </div>
+
+      <h2 class="section-title">Aggiornamento</h2>
+      <div class="card card-pad" id="update-card">
+        <div class="kv"><span>Versione installata</span><span class="mono">${escapeHtml(verLabel)}</span></div>
+        <div id="update-status" class="muted" style="font-size:.9rem;margin:10px 0">
+          ${
+            version.repoAvailable
+              ? 'Premi «Controlla» per vedere se c’è una versione più recente.'
+              : 'Aggiornamento dall’app non disponibile su questa installazione — usa <span class="mono">./scripts/update.sh</span> sul server.'
+          }
+        </div>
+        <div style="display:flex;gap:8px;flex-wrap:wrap">
+          <button class="btn" id="check-update" ${version.repoAvailable ? '' : 'disabled'}>${icons.refresh}<span>Controlla aggiornamenti</span></button>
+          <button class="btn primary" id="do-update" hidden>${icons.download}<span>Aggiorna ora</span></button>
+        </div>
+      </div>
+
+      <h2 class="section-title">Backup</h2>
+      <div class="page-head" style="margin:0 0 12px">
+        <p class="muted" style="font-size:.9rem">Copie CSV dei tuoi dati</p>
         <button class="btn primary" id="mk-backup">${icons.download}<span>Crea backup adesso</span></button>
       </div>
 
@@ -1386,10 +1415,74 @@ docker compose run --rm web npm run restore -- /app/backups/NOME_BACKUP --yes</c
     try {
       const r = await api.post('/api/backups');
       toast(`Backup creato: ${r.created}`);
-      viewBackup(main);
+      viewImpostazioni(main);
     } catch (ex) {
       toast(ex.message, 'error');
       e.target.disabled = false;
+    }
+  });
+
+  const statusEl = main.querySelector('#update-status');
+  const doBtn = main.querySelector('#do-update');
+  main.querySelector('#check-update')?.addEventListener('click', async (e) => {
+    e.currentTarget.disabled = true;
+    statusEl.textContent = 'Controllo in corso…';
+    try {
+      const r = await api.checkUpdate();
+      if (!r.supported) {
+        statusEl.textContent = 'Controllo non disponibile su questa installazione.';
+      } else if (r.upToDate) {
+        statusEl.textContent = 'Sei all’ultima versione ✓';
+        doBtn.hidden = true;
+      } else {
+        statusEl.innerHTML =
+          `<strong>${r.behind} aggiornament${r.behind === 1 ? 'o' : 'i'} disponibil${r.behind === 1 ? 'e' : 'i'}</strong> ` +
+          `(${escapeHtml(r.localShort)} → ${escapeHtml(r.remoteShort)})` +
+          (r.log.length ? `<br><span class="mono" style="font-size:.8rem">${r.log.map(escapeHtml).join('<br>')}</span>` : '');
+        doBtn.hidden = !version.selfUpdateEnabled;
+        if (!version.selfUpdateEnabled) {
+          statusEl.innerHTML +=
+            `<br><br>Per aggiornare: <span class="mono">./scripts/update.sh</span> sul server, ` +
+            `oppure abilita <span class="mono">SELF_UPDATE_ENABLED=true</span>.`;
+        }
+      }
+    } catch (ex) {
+      statusEl.textContent = 'Errore: ' + ex.message;
+    } finally {
+      e.currentTarget.disabled = false;
+    }
+  });
+
+  doBtn?.addEventListener('click', async () => {
+    if (!confirm('Aggiornare adesso? L’app si riavvia: sarà irraggiungibile per ~1 minuto.')) return;
+    doBtn.disabled = true;
+    statusEl.textContent = 'Aggiornamento in corso… (git pull + riavvio)';
+    try {
+      const r = await api.runUpdate();
+      if (!r.updated) {
+        statusEl.textContent = r.message || 'Già aggiornato.';
+        doBtn.disabled = false;
+        return;
+      }
+      statusEl.textContent = `Aggiornato a ${r.to}. Riavvio in corso, attendo che l’app torni online…`;
+      // poll health then version
+      for (let i = 0; i < 60; i++) {
+        await new Promise((res) => setTimeout(res, 2000));
+        try {
+          const v = await api.version();
+          if (v.shaShort && v.shaShort !== version.shaShort) {
+            toast('App aggiornata ✓');
+            location.reload();
+            return;
+          }
+        } catch {
+          /* container still restarting */
+        }
+      }
+      statusEl.textContent = 'Riavvio più lungo del previsto. Ricarica la pagina tra poco.';
+    } catch (ex) {
+      statusEl.textContent = 'Errore: ' + (ex.message || 'aggiornamento non riuscito');
+      doBtn.disabled = false;
     }
   });
 }
@@ -1529,20 +1622,18 @@ async function openTxModal(tx = null, onChange) {
           <input id="occurredOn" name="occurredOn" type="date" required value="${t.occurredOn}" />
         </div>
       </div>
-      <div class="row-2">
-        ${catField('categoryId')}
-        <div class="field">
-          <label for="accountId">Conto</label>
-          <select id="accountId" name="accountId">
-            <option value="">Nessun conto</option>
-            ${accounts
-              .map(
-                (acc) =>
-                  `<option value="${acc.id}" ${String(acc.id) === String(t.accountId) ? 'selected' : ''}>${escapeHtml(acc.name)}</option>`
-              )
-              .join('')}
-          </select>
-        </div>
+      ${catField('categoryId')}
+      <div class="field">
+        <label for="accountId">Conto</label>
+        <select id="accountId" name="accountId">
+          <option value="">Nessun conto</option>
+          ${accounts
+            .map(
+              (acc) =>
+                `<option value="${acc.id}" ${String(acc.id) === String(t.accountId) ? 'selected' : ''}>${escapeHtml(acc.name)}</option>`
+            )
+            .join('')}
+        </select>
       </div>
       <div class="field">
         <label>Ambito</label>
