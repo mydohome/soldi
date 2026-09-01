@@ -1,5 +1,7 @@
 # Soldi 💸
 
+[![CI](https://github.com/mydohome/soldi/actions/workflows/ci.yml/badge.svg)](https://github.com/mydohome/soldi/actions/workflows/ci.yml)
+
 Web app per tenere traccia delle **spese** e delle **entrate** personali: categorie,
 riepiloghi **giornalieri, settimanali e mensili**, grafici, account con password e
 **backup automatico settimanale in CSV** con ripristino.
@@ -315,6 +317,10 @@ npm run restore -- --latest --yes
 ```
 
 ---
+
+## Contribuire
+
+Vedi [CONTRIBUTING.md](CONTRIBUTING.md). In breve: `npm test` prima di ogni PR.
 
 ## Licenza
 
