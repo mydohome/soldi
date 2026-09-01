@@ -101,13 +101,15 @@ docker compose ps
 L'app risponde su `http://IP_DEL_SERVER:3010`. Apri la porta nel firewall se necessario
 (`ufw allow 3010/tcp`).
 
-**Aggiornamenti:**
+**Aggiornamenti:** uno script fa tutto (backup → `git pull` → rebuild → verifica):
 
 ```bash
-cd soldi && git pull && docker compose up -d --build
+cd soldi && ./scripts/update.sh
 ```
 
+In alternativa, a mano: `git pull && docker compose up -d --build`.
 Lo schema del database viene applicato automaticamente a ogni avvio (idempotente).
+Non serve `docker compose down -v` (cancellerebbe i dati).
 
 **HTTP diretto** (`http://IP_SERVER:3010`): lascia `HTTPS_ENABLED=false` (default).
 
