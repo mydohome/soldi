@@ -15,7 +15,10 @@ services:
       retries: 5
 
   web:
-    build: .
+    build:
+      context: .
+      args:
+        GIT_SHA: ${GIT_SHA:-}
     restart: unless-stopped
     depends_on:
       db:
@@ -39,11 +42,20 @@ services:
       BACKUP_KEEP: ${BACKUP_KEEP:-8}
       BACKUP_DIR: /app/backups
       TZ: ${TZ:-Europe/Rome}
+      # Aggiornamento dall'app (Impostazioni → Aggiorna). true = attivo.
+      # Richiede i mount qui sotto: fa `git pull` + riavvio, senza rebuild dell'immagine.
+      SELF_UPDATE_ENABLED: ${SELF_UPDATE_ENABLED:-false}
     ports:
       # <porta pubblicata sull'host>:<porta interna del container, fissa>
       - "${HOST_PORT:-3000}:3000"
     volumes:
       - ./backups:/app/backups
+      # Aggiornamento dall'app: il repo è montato su /repo e il suo codice
+      # (src/public) direttamente su /app, così `git pull` + riavvio aggiorna
+      # l'app senza ricostruire l'immagine.
+      - .:/repo
+      - ./src:/app/src
+      - ./public:/app/public
 
 volumes:
   db-data:

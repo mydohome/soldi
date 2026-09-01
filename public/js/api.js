@@ -51,4 +51,7 @@ export const api = {
   planned: () => request('GET', '/api/planned'),
   plannedSummary: (qs = '') => request('GET', `/api/planned/summary${qs ? `?${qs}` : ''}`),
   backups: () => request('GET', '/api/backups'),
+  version: () => request('GET', '/api/settings/version'),
+  checkUpdate: () => request('GET', '/api/settings/check-update'),
+  runUpdate: () => request('POST', '/api/settings/update'),
 };

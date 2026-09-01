@@ -41,6 +41,7 @@
 }
 
 * { box-sizing: border-box; margin: 0; padding: 0; }
+[hidden] { display: none !important; }
 
 html, body {
   height: 100%;
@@ -621,6 +622,14 @@ button { cursor: pointer; }
   background: var(--bg-sunken);
   color: var(--ink-soft);
 }
+.kv {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  font-size: 0.92rem;
+}
+.kv span:first-child { color: var(--ink-faint); }
+
 .section-title {
   font-size: 1.05rem;
   margin: 26px 0 12px;

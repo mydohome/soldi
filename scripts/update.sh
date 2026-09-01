@@ -57,6 +57,7 @@ fi
 
 # --- 3. rebuild + restart ----------------------------------------------------
 log "Ricostruisco e riavvio i container…"
+export GIT_SHA="$(git rev-parse HEAD)"
 $DC up -d --build
 
 # --- 4. attesa + verifica ---------------------------------------------------
