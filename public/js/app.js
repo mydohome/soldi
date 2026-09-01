@@ -579,10 +579,12 @@ async function viewCategorie(main) {
                     (c) => `
             <div class="cat-row" data-id="${c.id}">
               <span class="dot" style="background:${c.color}"></span>
-              <span class="name">${escapeHtml(c.name)}</span>
-              <span class="count">${c.tx_count} mov.</span>
-              <button class="icon-btn edit-cat" aria-label="Modifica">${icons.edit}</button>
-              <button class="icon-btn del-cat" aria-label="Elimina">${icons.trash}</button>
+              <span class="name meta">${escapeHtml(c.name)}</span>
+              <div class="row-tail">
+                <span class="count">${c.tx_count} mov.</span>
+                <button class="icon-btn edit-cat" aria-label="Modifica">${icons.edit}</button>
+                <button class="icon-btn del-cat" aria-label="Elimina">${icons.trash}</button>
+              </div>
             </div>`
                   )
                   .join('')
@@ -634,19 +636,21 @@ async function viewSpeseFisse(main) {
   const ruleRow = (r) => `
     <div class="cat-row ${r.active ? '' : 'is-off'}" data-id="${r.id}">
       <span class="dot" style="background:${r.categoryColor || 'var(--brand)'}"></span>
-      <div class="meta" style="min-width:0;flex:1">
+      <div class="meta">
         <div class="name">${escapeHtml(r.name)} ${scopeBadge(r.scope)}</div>
-        <div class="cat">${fmtEur(r.amount)} · il giorno ${r.dayOfMonth}${
+        <div class="cat">il giorno ${r.dayOfMonth}${
           r.categoryName ? ' · ' + escapeHtml(r.categoryName) : ''
         }${r.accountName ? ' · ' + escapeHtml(r.accountName) : ''}</div>
       </div>
-      <span class="amount ${r.type}">${r.type === 'income' ? '+' : '−'}${fmtEur(r.amount)}</span>
-      <label class="switch" title="${r.active ? 'Attiva' : 'Disattivata'}">
-        <input type="checkbox" class="rec-toggle" ${r.active ? 'checked' : ''} />
-        <span class="switch-track"></span>
-      </label>
-      <button class="icon-btn edit-rec" aria-label="Modifica">${icons.edit}</button>
-      <button class="icon-btn del-rec" aria-label="Elimina">${icons.trash}</button>
+      <div class="row-tail">
+        <span class="amount ${r.type}">${r.type === 'income' ? '+' : '−'}${fmtEur(r.amount)}</span>
+        <label class="switch" title="${r.active ? 'Attiva' : 'Disattivata'}">
+          <input type="checkbox" class="rec-toggle" ${r.active ? 'checked' : ''} />
+          <span class="switch-track"></span>
+        </label>
+        <button class="icon-btn edit-rec" aria-label="Modifica">${icons.edit}</button>
+        <button class="icon-btn del-rec" aria-label="Elimina">${icons.trash}</button>
+      </div>
     </div>`;
 
   main.innerHTML = '';
@@ -925,13 +929,13 @@ async function viewPrevisioni(main) {
       return `
         <div class="cat-row">
           <span class="dot" style="background:${c.color}"></span>
-          <div class="meta" style="flex:1;min-width:0">
+          <div class="meta">
             <div class="name">${escapeHtml(c.name)}</div>
             <div class="budget-bar"><span style="width:${Math.min(100, pct)}%;background:${
               over ? 'var(--expense)' : 'var(--accent)'
             }"></span></div>
           </div>
-          <div style="text-align:right;white-space:nowrap">
+          <div class="row-tail" style="text-align:right;white-space:nowrap;display:block">
             <div style="font-weight:700;font-variant-numeric:tabular-nums">${fmtEur(c.actual)}</div>
             <div class="count">/ ${c.planned > 0 ? fmtEur(c.planned) : '—'}</div>
           </div>
@@ -942,19 +946,20 @@ async function viewPrevisioni(main) {
   const itemRow = (p) => `
     <div class="cat-row ${p.active ? '' : 'is-off'}" data-id="${p.id}">
       <span class="dot" style="background:${p.categoryColor || 'var(--brand)'}"></span>
-      <div class="meta" style="flex:1;min-width:0">
+      <div class="meta">
         <div class="name">${escapeHtml(p.name)} ${scopeBadge(p.scope)}</div>
-        <div class="cat">${
+        <div class="cat">${fmtEur(p.amount)}${p.cadence === 'monthly' ? '/mese' : '/anno'} · ${
           p.cadence === 'monthly' ? 'ogni mese' : 'a ' + MONTHS_LONG[(p.month || 1) - 1]
         }${p.categoryName ? ' · ' + escapeHtml(p.categoryName) : ''}</div>
       </div>
-      <span class="amount expense">${fmtEur(p.amount)}${p.cadence === 'monthly' ? '/mese' : '/anno'}</span>
-      <label class="switch" title="${p.active ? 'Attiva' : 'Disattivata'}">
-        <input type="checkbox" class="pl-toggle" ${p.active ? 'checked' : ''} />
-        <span class="switch-track"></span>
-      </label>
-      <button class="icon-btn edit-pl" aria-label="Modifica">${icons.edit}</button>
-      <button class="icon-btn del-pl" aria-label="Elimina">${icons.trash}</button>
+      <div class="row-tail">
+        <label class="switch" title="${p.active ? 'Attiva' : 'Disattivata'}">
+          <input type="checkbox" class="pl-toggle" ${p.active ? 'checked' : ''} />
+          <span class="switch-track"></span>
+        </label>
+        <button class="icon-btn edit-pl" aria-label="Modifica">${icons.edit}</button>
+        <button class="icon-btn del-pl" aria-label="Elimina">${icons.trash}</button>
+      </div>
     </div>`;
 
   main.innerHTML = '';
@@ -1220,11 +1225,15 @@ async function viewConti(main) {
                   (acc) => `
           <div class="cat-row" data-id="${acc.id}">
             <span class="dot" style="background:${acc.color}"></span>
-            <span class="name">${escapeHtml(acc.name)}</span>
-            <span class="pill">${escapeHtml(ACCOUNT_KINDS[acc.kind] || acc.kind)}</span>
-            <span class="count">${acc.tx_count} mov.</span>
-            <button class="icon-btn edit-acc" aria-label="Modifica">${icons.edit}</button>
-            <button class="icon-btn del-acc" aria-label="Elimina">${icons.trash}</button>
+            <div class="meta">
+              <span class="name">${escapeHtml(acc.name)}</span>
+              <span class="pill">${escapeHtml(ACCOUNT_KINDS[acc.kind] || acc.kind)}</span>
+            </div>
+            <div class="row-tail">
+              <span class="count">${acc.tx_count} mov.</span>
+              <button class="icon-btn edit-acc" aria-label="Modifica">${icons.edit}</button>
+              <button class="icon-btn del-acc" aria-label="Elimina">${icons.trash}</button>
+            </div>
           </div>`
                 )
                 .join('')
@@ -1343,7 +1352,7 @@ async function viewBackup(main) {
                   (b) => `
           <div class="cat-row">
             <span class="dot" style="background:var(--brand)"></span>
-            <div>
+            <div class="meta">
               <div class="name mono">${escapeHtml(b.name)}</div>
               <div class="count">${b.createdAt ? new Date(b.createdAt).toLocaleString('it-IT') : '—'} · ${
                     b.label || 'auto'
