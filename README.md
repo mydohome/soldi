@@ -18,6 +18,7 @@ Funziona da smartphone e da desktop (interfaccia responsive), gira interamente c
 - [Deploy su un server (Debian)](#deploy-su-un-server-debian)
 - [Configurazione (.env)](#configurazione-env)
 - [Uso](#uso)
+- [Gestione utenti](#gestione-utenti)
 - [Installare come app su iPhone/Android](#installare-come-app-su-iphoneandroid)
 - [Backup automatico](#backup-automatico)
 - [Ripristino di emergenza](#ripristino-di-emergenza-disaster-recovery)
@@ -184,6 +185,35 @@ Docker li riavvia da solo se il server si riavvia (basta che il servizio `docker
 - **Impostazioni** — versione installata e **aggiornamento dall'app** (controlla / installa
   l'ultima versione da git, se `SELF_UPDATE_ENABLED=true`); **backup** (elenco, «Crea backup
   adesso», istruzioni di ripristino).
+
+---
+
+## Gestione utenti
+
+**Primo utente (installazione nuova):** finché non esiste alcun account la schermata di
+login mostra comunque «Crea account», anche con `ALLOW_REGISTRATION=false`. Registra il tuo
+account lì.
+
+**Aggiungere altri utenti** (o quando la registrazione è disabilitata) — da terminale sul server:
+
+```bash
+docker compose exec web npm run user:create
+# oppure senza prompt:
+docker compose exec web npm run user:create -- mario@esempio.it 'una-password' 'Mario'
+```
+
+Ogni utente ha i propri movimenti, categorie e conti, completamente separati.
+
+Altri comandi:
+
+```bash
+docker compose exec web npm run user:list                 # elenco utenti
+docker compose exec web npm run user:password             # reimposta una password (prompt)
+docker compose exec web npm run user:password -- mario@esempio.it 'nuova-password'
+```
+
+> In alternativa puoi riattivare temporaneamente la registrazione: `ALLOW_REGISTRATION=true`
+> nel `.env` → `./scripts/update.sh` → registri → rimetti `false` → `./scripts/update.sh`.
 
 ---
 
@@ -375,9 +405,14 @@ npm run dev                # http://localhost:3000, riavvio automatico
 Comandi utili:
 
 ```bash
-npm run backup             # backup CSV immediato
-npm run restore -- --latest --yes
+npm run backup                       # backup CSV immediato
+npm run restore -- --latest --yes    # ripristino
+npm run user:create                  # crea un utente (prompt)
+npm run user:list                    # elenco utenti
+npm run user:password -- a@b.it 'x'  # reimposta una password
 ```
+
+Sul server, davanti a ogni comando: `docker compose exec web …`
 
 ---
 
