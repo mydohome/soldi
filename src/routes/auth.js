@@ -5,12 +5,11 @@ const bcrypt = require('bcryptjs');
 const rateLimit = require('express-rate-limit');
 const { z } = require('zod');
 
-const { query, withTransaction } = require('../db/pool');
+const { query } = require('../db/pool');
 const { COOKIE_NAME, signSession, cookieOptions } = require('../auth/tokens');
 const { requireAuth } = require('../auth/middleware');
 const { handler, httpError } = require('../http/validate');
-const defaultCategories = require('../data/default-categories');
-const defaultAccounts = require('../data/default-accounts');
+const { createUser } = require('../auth/users');
 
 const router = express.Router();
 
@@ -58,36 +57,13 @@ router.post(
     }
     const { email, password, displayName } = credentials.parse(req.body);
 
-    const existing = await query('SELECT 1 FROM users WHERE email = $1', [email]);
-    if (existing.rowCount > 0) {
-      throw httpError(409, 'email_taken', 'Esiste già un account con questa email');
+    let user;
+    try {
+      user = await createUser({ email, password, displayName });
+    } catch (err) {
+      if (err.code === 'email_taken') throw httpError(409, 'email_taken', err.message);
+      throw err;
     }
-
-    const passwordHash = await bcrypt.hash(password, 12);
-
-    const user = await withTransaction(async (client) => {
-      const inserted = await client.query(
-        `INSERT INTO users (email, password_hash, display_name)
-         VALUES ($1, $2, $3)
-         RETURNING id, email, display_name`,
-        [email, passwordHash, displayName || email.split('@')[0]]
-      );
-      const row = inserted.rows[0];
-
-      for (const c of defaultCategories) {
-        await client.query(
-          `INSERT INTO categories (user_id, name, color, kind) VALUES ($1, $2, $3, $4)`,
-          [row.id, c.name, c.color, c.kind]
-        );
-      }
-      for (const a of defaultAccounts) {
-        await client.query(
-          `INSERT INTO accounts (user_id, name, kind, color) VALUES ($1, $2, $3, $4)`,
-          [row.id, a.name, a.kind, a.color]
-        );
-      }
-      return row;
-    });
 
     setSession(res, user);
     res.status(201).json({ user: { id: user.id, email: user.email, displayName: user.display_name } });
