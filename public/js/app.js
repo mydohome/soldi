@@ -114,7 +114,13 @@ async function boot() {
 }
 
 /* ------------------------------------------------------------------ auth */
-function renderAuth() {
+async function renderAuth() {
+  let registrationEnabled = true;
+  try {
+    ({ registrationEnabled } = await api.authConfig());
+  } catch {
+    /* keep default */
+  }
   root.innerHTML = '';
   const view = h(`
     <div class="auth">
@@ -127,7 +133,7 @@ function renderAuth() {
       <div class="auth-card">
         <div class="brand">${logoMark}<span>Soldi</span></div>
         <p class="tagline">Le tue spese ed entrate, in ordine.</p>
-        <div class="auth-tabs">
+        <div class="auth-tabs" ${registrationEnabled ? '' : 'hidden'}>
           <button data-tab="login" class="active">Accedi</button>
           <button data-tab="register">Crea account</button>
         </div>

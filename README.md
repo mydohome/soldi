@@ -146,6 +146,7 @@ Docker li riavvia da solo se il server si riavvia (basta che il servizio `docker
 | `HOST_PORT` | `3000` | Porta pubblicata sull'host (es. `3010` su un server). L'app nel container resta sempre sulla 3000. |
 | `JWT_SECRET` | — (**obbligatorio**) | Segreto per firmare i cookie di sessione. Usa `openssl rand -hex 32`. |
 | `HTTPS_ENABLED` | `false` | `true` **solo** se l'app è raggiunta via HTTPS. Attiva HSTS, `upgrade-insecure-requests` e cookie `Secure`. In HTTP puro lascialo `false`, altrimenti la pagina resta bloccata su «Carico Soldi…». |
+| `ALLOW_REGISTRATION` | `true` | `false` = niente registrazione di nuovi utenti dalla schermata di login (resta possibile finché non esiste alcun utente, per il primo account). |
 | `TZ` | `Europe/Rome` | Fuso orario del container (influenza l'orario del backup). |
 | `PGUSER` / `PGPASSWORD` / `PGDATABASE` | `soldi` | Credenziali PostgreSQL. |
 | `BACKUP_ENABLED` | `true` | Abilita lo scheduler del backup automatico. |
@@ -334,7 +335,8 @@ Tutte sotto `/api`, JSON, autenticazione via cookie di sessione.
 
 | Metodo | Endpoint | Descrizione |
 |---|---|---|
-| `POST` | `/api/auth/register` | Crea account (`email`, `password`, `displayName?`) |
+| `GET`  | `/api/auth/config` | `{ registrationEnabled }` |
+| `POST` | `/api/auth/register` | Crea account (`email`, `password`, `displayName?`) — 403 se disabilitata |
 | `POST` | `/api/auth/login` | Login |
 | `POST` | `/api/auth/logout` | Logout |
 | `GET`  | `/api/auth/me` | Utente corrente |

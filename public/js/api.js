@@ -35,6 +35,7 @@ export const api = {
   del: (p) => request('DELETE', p),
 
   // auth
+  authConfig: () => request('GET', '/api/auth/config'),
   me: () => request('GET', '/api/auth/me'),
   login: (email, password) => request('POST', '/api/auth/login', { email, password }),
   register: (payload) => request('POST', '/api/auth/register', payload),

@@ -32,10 +32,30 @@ function setSession(res, user) {
   res.cookie(COOKIE_NAME, signSession(user), cookieOptions());
 }
 
+/**
+ * Registration is open when ALLOW_REGISTRATION isn't "false", OR when there are
+ * no users yet (so a fresh install can always create its first account).
+ */
+async function registrationOpen() {
+  if (process.env.ALLOW_REGISTRATION !== 'false') return true;
+  const { rows } = await query('SELECT COUNT(*)::int AS n FROM users');
+  return rows[0].n === 0;
+}
+
+router.get(
+  '/config',
+  handler(async (req, res) => {
+    res.json({ registrationEnabled: await registrationOpen() });
+  })
+);
+
 router.post(
   '/register',
   authLimiter,
   handler(async (req, res) => {
+    if (!(await registrationOpen())) {
+      throw httpError(403, 'registration_closed', 'La registrazione di nuovi utenti è disabilitata');
+    }
     const { email, password, displayName } = credentials.parse(req.body);
 
     const existing = await query('SELECT 1 FROM users WHERE email = $1', [email]);
