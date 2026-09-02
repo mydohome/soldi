@@ -37,6 +37,7 @@ services:
       # per un deploy in HTTP puro (http://server:3010).
       HTTPS_ENABLED: ${HTTPS_ENABLED:-false}
       COOKIE_SECURE: ${COOKIE_SECURE:-false}
+      ALLOW_REGISTRATION: ${ALLOW_REGISTRATION:-true}
       BACKUP_ENABLED: ${BACKUP_ENABLED:-true}
       BACKUP_CRON: ${BACKUP_CRON:-0 3 * * 0}
       BACKUP_KEEP: ${BACKUP_KEEP:-8}
