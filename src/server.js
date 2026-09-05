@@ -50,6 +50,14 @@ app.use(express.json({ limit: '256kb' }));
 app.use(cookieParser());
 app.use(rateLimit({ windowMs: 60 * 1000, max: 300, standardHeaders: true, legacyHeaders: false }));
 
+// API data must never be cached: an installed PWA (iOS in particular) otherwise
+// serves a stale GET after the user edits something — e.g. the dashboard keeps
+// showing a movimento's old category after it was changed.
+app.use('/api', (req, res, next) => {
+  res.set('Cache-Control', 'no-store');
+  next();
+});
+
 app.get('/api/health', async (req, res) => {
   try {
     await pool.query('SELECT 1');
