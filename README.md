@@ -110,8 +110,14 @@ cd soldi && ./scripts/update.sh
 ```
 
 Lo script scarica gli aggiornamenti in modo **anonimo** (il repo è pubblico) e sistema da
-solo il remote, quindi non serve nessuna credenziale git sul server. Se un `git pull`
-manuale ti chiede utente/password (per un clone fatto quando il repo era privato):
+solo il remote, quindi non serve nessuna credenziale git sul server.
+
+Se hai installato scaricando lo **ZIP** invece di `git clone`, la cartella non è un
+repository git: al primo avvio `./scripts/update.sh` la aggancia da solo a GitHub
+(`.env`, `backups/` e i dati del database non vengono toccati). Da lì in poi gli
+aggiornamenti — anche quelli da **Impostazioni → Aggiorna** — funzionano normalmente.
+
+Se un `git pull` manuale ti chiede utente/password (per un clone fatto quando il repo era privato):
 
 ```bash
 git remote set-url origin https://github.com/mydohome/soldi.git

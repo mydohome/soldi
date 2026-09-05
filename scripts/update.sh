@@ -1,12 +1,17 @@
 #!/usr/bin/env bash
 #
 # Soldi — aggiornamento in-place.
-# Backup dei dati -> git pull -> rebuild dei container -> verifica.
+# Backup dei dati -> aggiorna il codice -> rebuild dei container -> verifica.
 # Eseguire dalla cartella del progetto:  ./scripts/update.sh
+#
+# Funziona anche se la cartella è solo una copia dei file (non un clone git):
+# in quel caso la aggancia a GitHub la prima volta.
 #
 set -euo pipefail
 
 cd "$(dirname "$0")/.."
+
+REPO_URL="https://github.com/mydohome/soldi.git"
 
 c_info='\033[1;36m'; c_ok='\033[1;32m'; c_err='\033[1;31m'; c_off='\033[0m'
 log()  { printf "\n${c_info}▸ %s${c_off}\n" "$1"; }
@@ -18,7 +23,6 @@ die()  { printf "\n${c_err}✗ %s${c_off}\n" "$1" >&2; exit 1; }
 [ -f docker-compose.yml ] || die "docker-compose.yml non trovato. Esegui lo script dalla cartella del progetto."
 [ -f .env ]               || die "File .env mancante: crealo da .env.example prima di aggiornare."
 command -v git >/dev/null || die "git non installato."
-[ -d .git ]               || die "Questa non è una copia git del repository (manca .git)."
 
 if docker compose version >/dev/null 2>&1; then
   DC="docker compose"
@@ -40,7 +44,35 @@ git_ro() {
         "$@"
 }
 
-# Rimetti il remote su HTTPS anonimo (annulla un remote SSH o con token nell'URL).
+# --- 0. aggancia la cartella a git se non lo è già ------------------------
+# Un deploy fatto scaricando lo ZIP (o copiando i file) non ha .git: senza,
+# né questo script né "Impostazioni → Aggiorna" possono funzionare.
+if [ ! -d .git ]; then
+  log "Questa cartella non è un checkout git: la collego a GitHub…"
+  git init -q
+  git config --local credential.helper ""
+  git remote add origin "$REPO_URL" 2>/dev/null || git remote set-url origin "$REPO_URL"
+  if ! git_ro fetch --quiet origin main; then
+    die "Impossibile scaricare il codice da GitHub ($REPO_URL). Controlla la connessione di rete."
+  fi
+
+  # I file locali sono una copia del repo; .env, backups/ e node_modules sono
+  # gitignorati e NON vengono toccati. I file tracciati vengono riportati alla
+  # versione ufficiale di GitHub.
+  printf "\n"
+  warn "I file di codice verranno riallineati alla versione di GitHub (main)."
+  warn ".env, backups/ e i dati del database NON vengono toccati."
+  if [ -t 0 ]; then
+    printf "  Procedo? [s/N] "
+    read -r reply
+    case "$reply" in [sSyY]*) ;; *) die "Annullato." ;; esac
+  fi
+  git reset -q --hard origin/main
+  git branch -q --set-upstream-to=origin/main main 2>/dev/null || true
+  ok "Cartella collegata a GitHub — ora gli aggiornamenti sono automatici."
+fi
+
+# --- rimetti il remote su HTTPS anonimo (annulla SSH o token nell'URL) ----
 origin_url="$(git remote get-url origin 2>/dev/null || true)"
 case "$origin_url" in
   git@github.com:*)       clean="https://github.com/${origin_url#git@github.com:}" ;;
