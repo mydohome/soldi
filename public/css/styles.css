@@ -559,6 +559,46 @@ button { cursor: pointer; }
   box-shadow: 0 0 0 3px color-mix(in srgb, var(--brand) 20%, transparent);
 }
 .field .error { color: var(--expense); font-size: 0.8rem; }
+
+.suggest-line {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px 8px;
+  margin-top: 2px;
+  font-size: 0.82rem;
+  color: var(--ink-soft);
+}
+.suggest-line svg { width: 13px; height: 13px; }
+.suggest-line .sug-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-weight: 600;
+  color: var(--ink-faint);
+}
+.suggest-line .sug-vals { display: inline-flex; align-items: center; gap: 6px; min-width: 0; }
+.suggest-line .sug-dot {
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  margin-right: 4px;
+  vertical-align: middle;
+}
+.suggest-line .sug-sep { color: var(--ink-faint); margin: 0 2px; }
+.suggest-line .sug-apply {
+  margin-left: auto;
+  padding: 3px 10px;
+  border: 1px solid var(--brand);
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--brand) 12%, transparent);
+  color: var(--brand);
+  font-size: 0.8rem;
+  font-weight: 600;
+  cursor: pointer;
+}
+.suggest-line .sug-apply:hover { background: color-mix(in srgb, var(--brand) 22%, transparent); }
 .row-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; align-items: start; }
 @media (max-width: 560px) { .row-2 { grid-template-columns: 1fr; } }
 

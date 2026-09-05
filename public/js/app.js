@@ -1733,7 +1733,10 @@ async function openTxModal(tx = null, onChange) {
       </div>
       <div class="field">
         <label for="note">Nota</label>
-        <input id="note" name="note" maxlength="280" value="${escapeHtml(t.note || '')}" placeholder="Facoltativa" />
+        <input id="note" name="note" maxlength="280" autocomplete="off" list="tx-note-list"
+               value="${escapeHtml(t.note || '')}" placeholder="Facoltativa" />
+        <datalist id="tx-note-list"></datalist>
+        <div class="suggest-line" id="tx-suggest" hidden></div>
       </div>
       <span class="error" id="tx-err"></span>
       <div class="modal-actions">
@@ -1763,6 +1766,7 @@ async function openTxModal(tx = null, onChange) {
     form.querySelector('.switch-label.expense').classList.toggle('on', type === 'expense');
     form.querySelector('.switch-label.income').classList.toggle('on', type === 'income');
     fillCats(catSelect.value || t.categoryId);
+    askSug();
   };
   typeSwitch.addEventListener('change', syncType);
 
@@ -1772,8 +1776,84 @@ async function openTxModal(tx = null, onChange) {
     form.querySelector('.switch-label.personal').classList.toggle('on', scope === 'personal');
     form.querySelector('.switch-label.home').classList.toggle('on', scope === 'home');
     fillCats(catSelect.value || t.categoryId);
+    askSug();
   };
   scopeInput.addEventListener('change', syncScope);
+
+  // --- suggerimenti da storico personale: descrizione, categoria, conto ---
+  const accSelect = form.querySelector('#accountId');
+  const noteInput = form.querySelector('#note');
+  const noteList = form.querySelector('#tx-note-list');
+  const suggestLine = form.querySelector('#tx-suggest');
+  let catTouched = editing;
+  let accTouched = editing;
+  let lastSug = null;
+
+  catSelect.addEventListener('change', () => {
+    catTouched = true;
+    paintSug();
+  });
+  accSelect.addEventListener('change', () => {
+    accTouched = true;
+    paintSug();
+  });
+
+  function paintSug() {
+    const s = lastSug;
+    const cat = s && s.category && String(s.category.id) !== catSelect.value ? s.category : null;
+    const acc = s && s.account && String(s.account.id) !== accSelect.value ? s.account : null;
+    if (!cat && !acc) {
+      suggestLine.hidden = true;
+      suggestLine.innerHTML = '';
+      return;
+    }
+    const chip = (x) => `<span class="sug-dot" style="background:${x.color}"></span>${escapeHtml(x.name)}`;
+    const vals = [cat && chip(cat), acc && chip(acc)].filter(Boolean).join('<span class="sug-sep">·</span>');
+    suggestLine.innerHTML =
+      `<span class="sug-label">${icons.target}Suggerito</span>` +
+      `<span class="sug-vals">${vals}</span>` +
+      `<button type="button" class="sug-apply">Applica</button>`;
+    suggestLine.hidden = false;
+    suggestLine.querySelector('.sug-apply').addEventListener('click', () => {
+      if (cat) {
+        catSelect.value = String(cat.id);
+        catTouched = true;
+      }
+      if (acc) {
+        accSelect.value = String(acc.id);
+        accTouched = true;
+      }
+      paintSug();
+    });
+  }
+
+  function applySug(s) {
+    lastSug = s;
+    noteList.innerHTML = (s.descriptions || [])
+      .map((d) => `<option value="${escapeHtml(d)}"></option>`)
+      .join('');
+    if (!catTouched && s.category && [...catSelect.options].some((o) => o.value === String(s.category.id))) {
+      catSelect.value = String(s.category.id);
+    }
+    if (!accTouched && s.account && [...accSelect.options].some((o) => o.value === String(s.account.id))) {
+      accSelect.value = String(s.account.id);
+    }
+    paintSug();
+  }
+
+  let sugTimer;
+  function askSug() {
+    clearTimeout(sugTimer);
+    sugTimer = setTimeout(async () => {
+      try {
+        applySug(await api.txSuggest({ note: noteInput.value, type, scope }));
+      } catch {
+        /* i suggerimenti sono un extra: in caso di errore si ignora */
+      }
+    }, 280);
+  }
+  noteInput.addEventListener('input', askSug);
+  askSug();
 
   form.querySelector('#tx-cancel').addEventListener('click', close);
   form.querySelector('#tx-delete')?.addEventListener('click', async () => {

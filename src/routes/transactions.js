@@ -6,6 +6,7 @@ const { z } = require('zod');
 const { query } = require('../db/pool');
 const { requireAuth } = require('../auth/middleware');
 const { handler, httpError } = require('../http/validate');
+const { buildSuggestions } = require('../transactions/suggest');
 
 const router = express.Router();
 router.use(requireAuth);
@@ -95,6 +96,59 @@ router.get(
       params
     );
     res.json({ transactions: rows.rows.map(shape) });
+  })
+);
+
+const suggestQuery = z.object({
+  note: z.string().max(280).optional().default(''),
+  type: z.enum(['expense', 'income']).optional(),
+  scope: z.enum(['personal', 'home']).optional(),
+});
+
+router.get(
+  '/suggest',
+  handler(async (req, res) => {
+    const q = suggestQuery.parse(req.query);
+    const where = ['user_id = $1'];
+    const params = [req.user.id];
+    if (q.type) {
+      params.push(q.type);
+      where.push(`type = $${params.length}`);
+    }
+    if (q.scope) {
+      params.push(q.scope);
+      where.push(`scope = $${params.length}`);
+    }
+
+    const [history, cats, accs] = await Promise.all([
+      query(
+        `SELECT note, category_id, account_id, occurred_on
+         FROM transactions
+         WHERE ${where.join(' AND ')}
+         ORDER BY occurred_on DESC, id DESC
+         LIMIT 600`,
+        params
+      ),
+      query('SELECT id, name, color FROM categories WHERE user_id = $1', [req.user.id]),
+      query('SELECT id, name, color FROM accounts WHERE user_id = $1', [req.user.id]),
+    ]);
+
+    const norm = (row) => ({
+      ...row,
+      occurred_on:
+        row.occurred_on instanceof Date
+          ? row.occurred_on.toISOString().slice(0, 10)
+          : row.occurred_on,
+    });
+
+    res.json(
+      buildSuggestions({
+        rows: history.rows.map(norm),
+        note: q.note,
+        catById: new Map(cats.rows.map((c) => [String(c.id), c])),
+        accById: new Map(accs.rows.map((a) => [String(a.id), a])),
+      })
+    );
   })
 );
 
