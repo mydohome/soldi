@@ -45,6 +45,11 @@ export const api = {
   overview: (params = '') =>
     request('GET', `/api/summary/overview${params ? `?${params}` : ''}`),
   transactions: (qs = '') => request('GET', `/api/transactions${qs ? `?${qs}` : ''}`),
+  txSuggest: ({ note = '', type = '', scope = '' } = {}) =>
+    request(
+      'GET',
+      `/api/transactions/suggest?${new URLSearchParams({ note, type, scope }).toString()}`
+    ),
   categories: () => request('GET', '/api/categories'),
   accounts: () => request('GET', '/api/accounts'),
   recurring: () => request('GET', '/api/recurring'),
