@@ -103,13 +103,22 @@ docker compose ps
 L'app risponde su `http://IP_DEL_SERVER:3010`. Apri la porta nel firewall se necessario
 (`ufw allow 3010/tcp`).
 
-**Aggiornamenti:** uno script fa tutto (backup → `git pull` → rebuild → verifica):
+**Aggiornamenti:** uno script fa tutto (backup → aggiorna il codice → rebuild → verifica):
 
 ```bash
 cd soldi && ./scripts/update.sh
 ```
 
-In alternativa, a mano: `git pull && docker compose up -d --build`.
+Lo script scarica gli aggiornamenti in modo **anonimo** (il repo è pubblico) e sistema da
+solo il remote, quindi non serve nessuna credenziale git sul server. Se un `git pull`
+manuale ti chiede utente/password (per un clone fatto quando il repo era privato):
+
+```bash
+git remote set-url origin https://github.com/mydohome/soldi.git
+git config --unset-all credential.helper 2>/dev/null || true
+git -c credential.helper= pull --ff-only    # d'ora in poi funziona anche a mano
+```
+
 Lo schema del database viene applicato automaticamente a ogni avvio (idempotente).
 Non serve `docker compose down -v` (cancellerebbe i dati).
 
