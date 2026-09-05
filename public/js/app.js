@@ -284,6 +284,20 @@ async function viewDashboard(main) {
     main.innerHTML = `<div class="empty">Errore nel caricamento: ${escapeHtml(e.message)}</div>`;
     return;
   }
+
+  // "Colpo d'occhio" always relative to today, independent of the period/anchor
+  // being browsed above — reuse `data` when we're already anchored on today.
+  let todayData = data;
+  if (state.anchor !== today()) {
+    try {
+      const tp = new URLSearchParams({ anchor: today() });
+      if (state.scope) tp.set('scope', state.scope);
+      todayData = await api.overview(tp.toString());
+    } catch {
+      todayData = null;
+    }
+  }
+
   const p = state.period;
   const block = p === 'day' ? data.day : p === 'week' ? data.week : data.month;
   const trend =
@@ -310,6 +324,8 @@ async function viewDashboard(main) {
           <button data-p="month" class="${p === 'month' ? 'active' : ''}">Mese</button>
         </div>
       </div>
+
+      ${quickStatsBlock(todayData)}
 
       <div class="dash-controls">
         <div class="segment scope-seg" id="scope-seg">
@@ -1500,6 +1516,24 @@ function scopeBadge(scope) {
   return `<span class="scope-badge ${scope}">${s.icon()}${s.short}</span>`;
 }
 
+// Three compact "at a glance" boxes: expenses today / last 7 days / this month.
+// Always relative to the real "today", independent of the period being browsed.
+function quickStatsBlock(td) {
+  if (!td) return '';
+  const last7 = td.dailyTrend.slice(-7).reduce((sum, d) => sum + d.expense, 0);
+  const box = (cls, label, value) => `
+    <div class="qstat ${cls}">
+      <span class="qs-label">${label}</span>
+      <span class="qs-value">${fmtEur(value)}</span>
+    </div>`;
+  return `
+    <div class="quick-stats">
+      ${box('qs-a', 'Oggi', td.day.expense)}
+      ${box('qs-b', 'Ultimi 7gg', last7)}
+      ${box('qs-c', 'Mese', td.month.expense)}
+    </div>`;
+}
+
 // Sub-line on a dashboard KPI card: "Pers. X · Casa Y" (only when not filtered).
 function statSplit(block, key) {
   if (state.scope !== '' || !block.personal) {
@@ -1613,9 +1647,29 @@ async function openTxModal(tx = null, onChange) {
   const { bd, close } = modal(`
     <h2>${editing ? 'Modifica movimento' : 'Nuovo movimento'}</h2>
     <form id="tx-form">
-      <div class="segment" id="type-seg" style="margin-bottom:14px">
-        <button type="button" data-t="expense" class="${t.type === 'expense' ? 'active' : ''}">Uscita</button>
-        <button type="button" data-t="income" class="${t.type === 'income' ? 'active' : ''}">Entrata</button>
+      <div class="row-2">
+        <div class="field">
+          <label>Tipo</label>
+          <label class="switch-row">
+            <span class="switch-label expense ${t.type === 'expense' ? 'on' : ''}">Uscita</span>
+            <span class="switch type-switch">
+              <input type="checkbox" id="typeSwitch" ${t.type === 'income' ? 'checked' : ''} />
+              <span class="switch-track"></span>
+            </span>
+            <span class="switch-label income ${t.type === 'income' ? 'on' : ''}">Entrata</span>
+          </label>
+        </div>
+        <div class="field">
+          <label>Ambito</label>
+          <label class="switch-row">
+            <span class="switch-label personal ${t.scope === 'personal' ? 'on' : ''}">${icons.person}Personale</span>
+            <span class="switch">
+              <input type="checkbox" id="scope" name="scope" ${t.scope === 'home' ? 'checked' : ''} />
+              <span class="switch-track"></span>
+            </span>
+            <span class="switch-label home ${t.scope === 'home' ? 'on' : ''}">${icons.home}Casa</span>
+          </label>
+        </div>
       </div>
       <div class="row-2">
         <div class="field">
@@ -1642,17 +1696,6 @@ async function openTxModal(tx = null, onChange) {
         </select>
       </div>
       <div class="field">
-        <label>Ambito</label>
-        <label class="switch-row">
-          <span class="switch-label ${t.scope === 'personal' ? 'on' : ''}">${icons.person}Personale</span>
-          <span class="switch">
-            <input type="checkbox" id="scope" name="scope" ${t.scope === 'home' ? 'checked' : ''} />
-            <span class="switch-track"></span>
-          </span>
-          <span class="switch-label ${t.scope === 'home' ? 'on' : ''}">${icons.home}Casa</span>
-        </label>
-      </div>
-      <div class="field">
         <label for="note">Nota</label>
         <input id="note" name="note" maxlength="280" value="${escapeHtml(t.note || '')}" placeholder="Facoltativa" />
       </div>
@@ -1677,20 +1720,20 @@ async function openTxModal(tx = null, onChange) {
   fillCats();
   wireQuickCat(form, { selectId: 'categoryId', cats, getKind: () => type, refill: fillCats });
 
-  form.querySelector('#type-seg').addEventListener('click', (e) => {
-    const b = e.target.closest('button');
-    if (!b) return;
-    type = b.dataset.t;
-    form.querySelectorAll('#type-seg button').forEach((x) => x.classList.toggle('active', x === b));
+  const typeSwitch = form.querySelector('#typeSwitch');
+  const syncType = () => {
+    type = typeSwitch.checked ? 'income' : 'expense';
+    form.querySelector('.switch-label.expense').classList.toggle('on', type === 'expense');
+    form.querySelector('.switch-label.income').classList.toggle('on', type === 'income');
     fillCats(catSelect.value || t.categoryId);
-  });
+  };
+  typeSwitch.addEventListener('change', syncType);
 
   const scopeInput = form.querySelector('#scope');
-  const scopeLabels = form.querySelectorAll('.switch-label');
   const syncScope = () => {
     const home = scopeInput.checked;
-    scopeLabels[0].classList.toggle('on', !home);
-    scopeLabels[1].classList.toggle('on', home);
+    form.querySelector('.switch-label.personal').classList.toggle('on', !home);
+    form.querySelector('.switch-label.home').classList.toggle('on', home);
   };
   scopeInput.addEventListener('change', syncScope);
 
