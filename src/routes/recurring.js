@@ -11,24 +11,26 @@ const { generateDue } = require('../recurring/generate');
 const router = express.Router();
 router.use(requireAuth);
 
-const ruleInput = z
-  .object({
-    name: z.string().trim().min(1).max(80),
-    type: z.enum(['expense', 'income']).default('expense'),
-    amount: z.coerce.number().positive('L’importo deve essere maggiore di zero').max(1_000_000_000),
-    categoryId: z.coerce.number().int().positive().nullable().optional(),
-    accountId: z.coerce.number().int().positive().nullable().optional(),
-    scope: z.enum(['personal', 'home']).default('personal'),
-    cadence: z.enum(['monthly', 'yearly']).default('monthly'),
-    month: z.coerce.number().int().min(1).max(12).nullable().optional(),
-    dayOfMonth: z.coerce.number().int().min(1).max(28).default(1),
-    note: z.string().trim().max(280).default(''),
-    active: z.boolean().default(true),
-  })
-  .refine((v) => v.cadence !== 'yearly' || v.month != null, {
-    message: 'Per una spesa fissa annuale serve il mese',
-    path: ['month'],
-  });
+const ruleShape = z.object({
+  name: z.string().trim().min(1).max(80),
+  type: z.enum(['expense', 'income']).default('expense'),
+  amount: z.coerce.number().positive('L’importo deve essere maggiore di zero').max(1_000_000_000),
+  categoryId: z.coerce.number().int().positive().nullable().optional(),
+  accountId: z.coerce.number().int().positive().nullable().optional(),
+  scope: z.enum(['personal', 'home']).default('personal'),
+  cadence: z.enum(['monthly', 'yearly']).default('monthly'),
+  month: z.coerce.number().int().min(1).max(12).nullable().optional(),
+  dayOfMonth: z.coerce.number().int().min(1).max(28).default(1),
+  note: z.string().trim().max(280).default(''),
+  active: z.boolean().default(true),
+});
+
+const yearlyNeedsMonth = (v) => v.cadence !== 'yearly' || v.month != null;
+const yearlyMonthIssue = { message: 'Per una spesa fissa annuale serve il mese', path: ['month'] };
+
+// z.object(...).refine(...) is a ZodEffects and has no .partial(); keep the raw
+// shape around so the PATCH handler can build a partial schema from it.
+const ruleInput = ruleShape.refine(yearlyNeedsMonth, yearlyMonthIssue);
 
 const toCents = (e) => Math.round(e * 100);
 const toEuros = (c) => Number(c) / 100;
@@ -116,7 +118,7 @@ router.patch(
   '/:id',
   handler(async (req, res) => {
     const id = z.coerce.number().int().positive().parse(req.params.id);
-    const patch = ruleInput.partial().parse(req.body);
+    const patch = ruleShape.partial().parse(req.body);
     if (Object.keys(patch).length === 0) throw httpError(400, 'empty_patch', 'Nessun campo da aggiornare');
     if ('categoryId' in patch) await assertOwned('categories', 'category', req.user.id, patch.categoryId ?? null);
     if ('accountId' in patch) await assertOwned('accounts', 'account', req.user.id, patch.accountId ?? null);
