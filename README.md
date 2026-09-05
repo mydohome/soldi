@@ -34,11 +34,11 @@ Funziona da smartphone e da desktop (interfaccia responsive), gira interamente c
 |---|---|
 | 👤 **Account** | Registrazione con email + password (hash `bcrypt`), sessione via cookie firmato `httpOnly`. Rate limiting sui tentativi di login. |
 | 💰 **Movimenti** | Entrate e uscite con importo, data, nota, categoria, **conto** e **ambito** (personale / casa). Modifica ed eliminazione. |
-| 🏷️ **Categorie** | Personalizzabili per colore e tipo (spesa/entrata). 11 categorie predefinite alla registrazione. |
+| 🏷️ **Categorie** | Personalizzabili per colore, tipo (spesa/entrata) e **ambito (Personale/Casa)** — separate nella schermata Categorie e nei filtri dei form. 11 categorie predefinite alla registrazione. |
 | 🏦 **Conti** | Contanti, conto corrente, carta… da associare ai movimenti come le categorie. 3 conti predefiniti alla registrazione. |
 | 🏠 **Personale / Casa** | Ogni movimento ha un ambito; la dashboard mostra Personale, Casa e Totale affiancati, e c'è un filtro dedicato. |
-| 🔁 **Spese fisse** | Regole ricorrenti (mutuo, finanziamento, addebiti, stipendio…) che generano un movimento al mese finché sono attive. Recupero automatico dopo downtime. |
-| 🎯 **Previsioni** | Voci di budget mensili/annuali → previsione delle spese dell'anno, proiezione a fine anno e confronto con lo speso reale, per categoria e per ambito. |
+| 🔁 **Spese fisse** | Regole ricorrenti (mutuo, finanziamento, addebiti, stipendio…), **mensili o una volta l'anno**, che generano un movimento vero finché sono attive. Recupero automatico dopo downtime. |
+| 🎯 **Previsioni** | Voci di budget mensili/annuali → previsione delle spese dell'anno, proiezione a fine anno, **budget mensile necessario** e **risparmio potenziale**, confronto con lo speso reale per categoria e ambito. Non tocca i grafici della Dashboard. |
 | 📱 **Installabile** | PWA: da iPhone/Android *Aggiungi a Home* e si apre a tutto schermo con icona propria. |
 | 📊 **Riepiloghi** | Totali entrate / uscite / saldo per **giorno**, **settimana** (lun–dom) e **mese**, con navigazione avanti/indietro. |
 | 📈 **Grafici** | Donut per categoria e barre entrate/uscite (SVG originali, nessuna libreria esterna). |
@@ -169,16 +169,23 @@ Docker li riavvia da solo se il server si riavvia (basta che il servizio `docker
   **creare una categoria al volo** dal form (pulsante `+` accanto al menu Categoria).
 - **Previsioni** — voci di budget: importo **mensile** o **una volta l'anno** (con il mese),
   categoria e ambito. La pagina mostra, per l'anno scelto, il **totale previsto**, lo **speso**
-  reale, la **proiezione a fine anno** (mesi passati = reale, futuri = previsto) e il confronto
-  previsto/speso per mese e per categoria. Con un interruttore includi anche le **spese fisse**
-  nella previsione. Le voci previste non creano movimenti.
-- **Spese fisse** — regole ricorrenti (mutuo, rata, abbonamento, stipendio…). Ogni regola
-  crea un movimento al mese il giorno scelto, finché è **attiva**. Lo switch nella lista la
-  disattiva senza toccare lo storico; «Esegui adesso» forza il controllo. I movimenti generati
-  hanno il badge «fissa» e restano modificabili. All'avvio l'app recupera i mesi arretrati
-  (utile dopo un fermo del server); riattivando una regola **non** si recuperano i mesi in cui
+  reale, la **proiezione a fine anno** (mesi passati = reale, futuri = previsto), il **budget
+  mensile necessario** (spese previste dell'anno spalmate su 12 mesi, comprese quelle annuali)
+  e il **risparmio potenziale al mese** (confronto con le entrate reali medie dei mesi già
+  trascorsi), oltre al confronto previsto/speso per mese e per categoria. Con un interruttore
+  includi anche le **spese fisse** nella previsione. Le voci previste **non creano movimenti e
+  non influenzano i grafici della Dashboard**: sono solo un'ipotesi di budget.
+- **Spese fisse** — regole ricorrenti (mutuo, rata, abbonamento, stipendio…), **ogni mese oppure
+  una volta l'anno** in un mese scelto. A differenza delle voci previste, creano un **movimento
+  vero**, il giorno scelto, finché la regola è **attiva**. Lo switch nella lista la disattiva
+  senza toccare lo storico; «Esegui adesso» forza il controllo. I movimenti generati hanno il
+  badge «fissa» e restano modificabili. All'avvio l'app recupera i mesi/anni arretrati (utile
+  dopo un fermo del server); riattivando una regola **non** si recuperano i periodi in cui
   era spenta.
-- **Categorie** — crea, rinomina, cambia colore o elimina. Eliminando una categoria i movimenti
+- **Categorie** — crea, rinomina, cambia colore, tipo o **ambito**, oppure elimina. Le categorie
+  **Personali** e **Casa** sono separate: nella schermata Categorie appaiono in liste distinte,
+  e nei form (Movimento, Spesa fissa, Voce prevista) il menu Categoria mostra solo quelle
+  dell'ambito selezionato con lo switch Personale/Casa. Eliminando una categoria i movimenti
   collegati **restano** (diventano «senza categoria»).
 - **Conti** — stessa cosa per i conti (contanti, conto corrente, carta…). Eliminando un conto
   i movimenti collegati restano «senza conto».
@@ -374,12 +381,12 @@ Tutte sotto `/api`, JSON, autenticazione via cookie di sessione.
 | `POST` | `/api/transactions` | Crea movimento (`accountId`, `scope` opzionali) |
 | `PATCH`| `/api/transactions/:id` | Modifica |
 | `DELETE`| `/api/transactions/:id` | Elimina |
-| `GET`/`POST`/`PATCH`/`DELETE` | `/api/categories` | Gestione categorie |
+| `GET`/`POST`/`PATCH`/`DELETE` | `/api/categories` | Gestione categorie (`kind`, `scope`: personal\|home) |
 | `GET`/`POST`/`PATCH`/`DELETE` | `/api/accounts` | Gestione conti |
-| `GET`/`POST`/`PATCH`/`DELETE` | `/api/recurring` | Gestione spese fisse (`DELETE ?keepMovimenti=true` tiene i movimenti già generati) |
+| `GET`/`POST`/`PATCH`/`DELETE` | `/api/recurring` | Gestione spese fisse (`cadence`: monthly\|yearly + `month`; `DELETE ?keepMovimenti=true` tiene i movimenti già generati) |
 | `POST` | `/api/recurring/run` | Genera subito i movimenti fissi dovuti |
 | `GET`/`POST`/`PATCH`/`DELETE` | `/api/planned` | Gestione voci di budget (spese previste) |
-| `GET`  | `/api/planned/summary?year=YYYY&includeRecurring=true\|false&scope=` | Previsione annuale: totali, proiezione, per mese/categoria/ambito |
+| `GET`  | `/api/planned/summary?year=YYYY&includeRecurring=true\|false&scope=` | Previsione annuale: totali, proiezione, budget mensile necessario, risparmio potenziale, per mese/categoria/ambito |
 | `GET`  | `/api/summary/overview?anchor=YYYY-MM-DD&scope=personal\|home` | Riepiloghi giorno/settimana/mese, split Personale/Casa, ripartizione per conto |
 | `GET`  | `/api/summary/range?from&to&group=day\|week\|month&scope=` | Serie temporale aggregata |
 | `GET`  | `/api/backups` | Elenco backup |

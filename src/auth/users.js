@@ -52,8 +52,8 @@ async function createUser({ email, password, displayName }) {
 
     for (const c of defaultCategories) {
       await client.query(
-        `INSERT INTO categories (user_id, name, color, kind) VALUES ($1, $2, $3, $4)`,
-        [row.id, c.name, c.color, c.kind]
+        `INSERT INTO categories (user_id, name, color, kind, scope) VALUES ($1, $2, $3, $4, $5)`,
+        [row.id, c.name, c.color, c.kind, c.scope || 'personal']
       );
     }
     for (const a of defaultAccounts) {

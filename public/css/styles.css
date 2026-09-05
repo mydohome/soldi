@@ -246,48 +246,6 @@ button { cursor: pointer; }
   .dash-controls .scope-seg { align-self: center; }
   .dash-controls .period-nav { justify-content: center; }
 }
-/* Three "at a glance" boxes at the top of the dashboard — always 3-up, even on
-   an iPhone-width screen, so values shrink with clamp() rather than wrapping. */
-.quick-stats {
-  display: grid;
-  grid-template-columns: repeat(3, 1fr);
-  gap: 8px;
-  margin-bottom: 16px;
-}
-.qstat {
-  min-width: 0;
-  border-radius: var(--radius-sm);
-  padding: 10px 6px;
-  text-align: center;
-  color: #fff;
-  box-shadow: var(--shadow-sm);
-}
-.qstat .qs-label {
-  display: block;
-  font-size: 0.64rem;
-  text-transform: uppercase;
-  letter-spacing: 0.03em;
-  font-weight: 650;
-  opacity: 0.88;
-  margin-bottom: 3px;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-.qstat .qs-value {
-  display: block;
-  font-size: clamp(0.8rem, 4.2vw, 1.05rem);
-  font-weight: 800;
-  letter-spacing: -0.01em;
-  font-variant-numeric: tabular-nums;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-.qs-a { background: linear-gradient(135deg, #6c8cff, #8fa4ff); }
-.qs-b { background: linear-gradient(135deg, #12b886, #57d9ae); }
-.qs-c { background: linear-gradient(135deg, #f4a259, #f6c453); color: #402c06; }
-
 .hero {
   position: relative;
   overflow: hidden;
@@ -700,6 +658,19 @@ button { cursor: pointer; }
   background: linear-gradient(var(--brand), var(--accent));
   flex: none;
 }
+.scope-group-title {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 0.78rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  color: var(--ink-faint);
+  margin-bottom: 8px;
+}
+.scope-group-title svg { width: 14px; height: 14px; }
+
 .muted { color: var(--ink-faint); }
 .mono { font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, monospace; font-size: 0.85em; }
 code.block {

@@ -14,8 +14,9 @@ CREATE TABLE IF NOT EXISTS categories (
   name       TEXT NOT NULL,
   color      TEXT NOT NULL DEFAULT '#6c8cff',
   kind       TEXT NOT NULL DEFAULT 'expense' CHECK (kind IN ('expense', 'income')),
+  scope      TEXT NOT NULL DEFAULT 'personal' CHECK (scope IN ('personal', 'home')),
   created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
-  UNIQUE (user_id, name, kind)
+  UNIQUE (user_id, name, kind, scope)
 );
 
 -- Conti (contanti, conto corrente, carta…) a cui associare i movimenti.
@@ -30,7 +31,8 @@ CREATE TABLE IF NOT EXISTS accounts (
 );
 
 -- Spese/entrate fisse ricorrenti (mutui, finanziamenti, addebiti…): generano
--- automaticamente un movimento al mese finché active = true.
+-- automaticamente un movimento finché active = true. 'monthly' = ogni mese;
+-- 'yearly' = una volta l'anno, nel mese indicato da `month`.
 CREATE TABLE IF NOT EXISTS recurring_rules (
   id             BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
   user_id        BIGINT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
@@ -40,6 +42,8 @@ CREATE TABLE IF NOT EXISTS recurring_rules (
   category_id    BIGINT REFERENCES categories(id) ON DELETE SET NULL,
   account_id     BIGINT REFERENCES accounts(id) ON DELETE SET NULL,
   scope          TEXT NOT NULL DEFAULT 'personal' CHECK (scope IN ('personal', 'home')),
+  cadence        TEXT NOT NULL DEFAULT 'monthly' CHECK (cadence IN ('monthly', 'yearly')),
+  month          INT CHECK (month BETWEEN 1 AND 12),
   day_of_month   INT NOT NULL DEFAULT 1 CHECK (day_of_month BETWEEN 1 AND 28),
   note           TEXT NOT NULL DEFAULT '',
   active         BOOLEAN NOT NULL DEFAULT true,
@@ -86,6 +90,35 @@ DO $$
 BEGIN
   IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'transactions_scope_check') THEN
     ALTER TABLE transactions ADD CONSTRAINT transactions_scope_check CHECK (scope IN ('personal', 'home'));
+  END IF;
+END $$;
+
+-- Categorie: ambito Personale/Casa. Le categorie esistenti diventano 'personal'
+-- di default; si riassegnano dalla schermata Categorie.
+ALTER TABLE categories ADD COLUMN IF NOT EXISTS scope TEXT NOT NULL DEFAULT 'personal';
+DO $$
+BEGIN
+  IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'categories_scope_check') THEN
+    ALTER TABLE categories ADD CONSTRAINT categories_scope_check CHECK (scope IN ('personal', 'home'));
+  END IF;
+  IF EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'categories_user_id_name_kind_key') THEN
+    ALTER TABLE categories DROP CONSTRAINT categories_user_id_name_kind_key;
+  END IF;
+  IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'categories_user_id_name_kind_scope_key') THEN
+    ALTER TABLE categories ADD CONSTRAINT categories_user_id_name_kind_scope_key UNIQUE (user_id, name, kind, scope);
+  END IF;
+END $$;
+
+-- Spese fisse: cadenza mensile/annuale, come le voci previste.
+ALTER TABLE recurring_rules ADD COLUMN IF NOT EXISTS cadence TEXT NOT NULL DEFAULT 'monthly';
+ALTER TABLE recurring_rules ADD COLUMN IF NOT EXISTS month INT;
+DO $$
+BEGIN
+  IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'recurring_rules_cadence_check') THEN
+    ALTER TABLE recurring_rules ADD CONSTRAINT recurring_rules_cadence_check CHECK (cadence IN ('monthly', 'yearly'));
+  END IF;
+  IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'recurring_rules_month_check') THEN
+    ALTER TABLE recurring_rules ADD CONSTRAINT recurring_rules_month_check CHECK (month BETWEEN 1 AND 12);
   END IF;
 END $$;
 
