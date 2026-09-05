@@ -9,7 +9,7 @@ module.exports = [
   { name: 'users', columns: ['id', 'email', 'password_hash', 'display_name', 'created_at'] },
   {
     name: 'categories',
-    columns: ['id', 'user_id', 'name', 'color', 'kind', 'created_at'],
+    columns: ['id', 'user_id', 'name', 'color', 'kind', 'scope', 'created_at'],
   },
   {
     name: 'accounts',
@@ -26,6 +26,8 @@ module.exports = [
       'category_id',
       'account_id',
       'scope',
+      'cadence',
+      'month',
       'day_of_month',
       'note',
       'active',

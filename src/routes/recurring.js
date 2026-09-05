@@ -11,17 +11,24 @@ const { generateDue } = require('../recurring/generate');
 const router = express.Router();
 router.use(requireAuth);
 
-const ruleInput = z.object({
-  name: z.string().trim().min(1).max(80),
-  type: z.enum(['expense', 'income']).default('expense'),
-  amount: z.coerce.number().positive('L’importo deve essere maggiore di zero').max(1_000_000_000),
-  categoryId: z.coerce.number().int().positive().nullable().optional(),
-  accountId: z.coerce.number().int().positive().nullable().optional(),
-  scope: z.enum(['personal', 'home']).default('personal'),
-  dayOfMonth: z.coerce.number().int().min(1).max(28).default(1),
-  note: z.string().trim().max(280).default(''),
-  active: z.boolean().default(true),
-});
+const ruleInput = z
+  .object({
+    name: z.string().trim().min(1).max(80),
+    type: z.enum(['expense', 'income']).default('expense'),
+    amount: z.coerce.number().positive('L’importo deve essere maggiore di zero').max(1_000_000_000),
+    categoryId: z.coerce.number().int().positive().nullable().optional(),
+    accountId: z.coerce.number().int().positive().nullable().optional(),
+    scope: z.enum(['personal', 'home']).default('personal'),
+    cadence: z.enum(['monthly', 'yearly']).default('monthly'),
+    month: z.coerce.number().int().min(1).max(12).nullable().optional(),
+    dayOfMonth: z.coerce.number().int().min(1).max(28).default(1),
+    note: z.string().trim().max(280).default(''),
+    active: z.boolean().default(true),
+  })
+  .refine((v) => v.cadence !== 'yearly' || v.month != null, {
+    message: 'Per una spesa fissa annuale serve il mese',
+    path: ['month'],
+  });
 
 const toCents = (e) => Math.round(e * 100);
 const toEuros = (c) => Number(c) / 100;
@@ -39,6 +46,8 @@ function shape(row) {
     accountId: row.account_id,
     accountName: row.account_name,
     scope: row.scope,
+    cadence: row.cadence,
+    month: row.month,
     dayOfMonth: row.day_of_month,
     note: row.note,
     active: row.active,
@@ -78,8 +87,8 @@ router.post(
 
     const inserted = await query(
       `INSERT INTO recurring_rules
-         (user_id, name, type, amount_cents, category_id, account_id, scope, day_of_month, note, active)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+         (user_id, name, type, amount_cents, category_id, account_id, scope, cadence, month, day_of_month, note, active)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
        RETURNING id`,
       [
         req.user.id,
@@ -89,12 +98,14 @@ router.post(
         input.categoryId ?? null,
         input.accountId ?? null,
         input.scope,
+        input.cadence,
+        input.cadence === 'yearly' ? input.month : null,
         input.dayOfMonth,
         input.note,
         input.active,
       ]
     );
-    // Generate any occurrence already due this month for the new rule.
+    // Generate any occurrence already due for the new rule.
     const gen = await generateDue({ userId: req.user.id });
     const row = await query(`${SELECT_RULE} WHERE r.id = $1`, [inserted.rows[0].id]);
     res.status(201).json({ rule: shape(row.rows[0]), generated: gen.created });
@@ -118,16 +129,22 @@ router.patch(
            category_id = CASE WHEN $6::boolean THEN $7 ELSE category_id END,
            account_id = CASE WHEN $8::boolean THEN $9 ELSE account_id END,
            scope = COALESCE($10, scope),
-           day_of_month = COALESCE($11, day_of_month),
-           note = COALESCE($12, note),
+           cadence = COALESCE($11, cadence),
+           month = CASE
+                     WHEN COALESCE($11, cadence) = 'monthly' THEN NULL
+                     WHEN $12::int IS NOT NULL THEN $12
+                     ELSE month
+                   END,
+           day_of_month = COALESCE($13, day_of_month),
+           note = COALESCE($14, note),
            -- On reactivation, resume from the current month: don't backfill the
            -- months the rule spent switched off.
            last_run_month = CASE
-             WHEN $13::boolean IS TRUE AND active IS FALSE
+             WHEN $15::boolean IS TRUE AND active IS FALSE
              THEN GREATEST(last_run_month, (date_trunc('month', CURRENT_DATE) - interval '1 month')::date)
              ELSE last_run_month
            END,
-           active = COALESCE($13, active)
+           active = COALESCE($15, active)
        WHERE id = $1 AND user_id = $2
        RETURNING id`,
       [
@@ -141,6 +158,8 @@ router.patch(
         'accountId' in patch,
         patch.accountId ?? null,
         patch.scope ?? null,
+        patch.cadence ?? null,
+        patch.month ?? null,
         patch.dayOfMonth ?? null,
         patch.note ?? null,
         patch.active ?? null,

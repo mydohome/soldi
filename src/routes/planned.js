@@ -185,7 +185,7 @@ router.get(
     let recurring = { rows: [] };
     if (q.includeRecurring) {
       recurring = await query(
-        `SELECT r.amount_cents, r.scope, r.category_id,
+        `SELECT r.amount_cents, r.scope, r.category_id, r.cadence, r.month,
                 c.name AS category_name, c.color AS category_color
          FROM recurring_rules r
          LEFT JOIN categories c ON c.id = r.category_id
@@ -230,22 +230,21 @@ router.get(
       return map.get(key);
     };
 
-    for (const row of actual.rows) actualByMonth[row.m - 1] = euros(row.total);
-    for (const row of planned.rows) {
+    // A monthly item hits every month of the year; a yearly item hits only its
+    // chosen month. Shared by planned_expenses and (when included) recurring_rules.
+    function applyPlanned(row) {
       const amt = euros(row.amount_cents);
+      const annual = row.cadence === 'monthly' ? amt * 12 : amt;
       const months = row.cadence === 'monthly' ? [...Array(12).keys()].map((i) => i + 1) : [row.month];
       for (const m of months) plannedByMonth[m - 1] += amt;
-      byScope[row.scope].planned += row.cadence === 'monthly' ? amt * 12 : amt;
+      byScope[row.scope].planned += annual;
       const c = bump(cats, row.category_id, row.category_name || 'Senza categoria', row.category_color || '#9aa4b2');
-      c.planned += row.cadence === 'monthly' ? amt * 12 : amt;
+      c.planned += annual;
     }
-    for (const row of recurring.rows) {
-      const amt = euros(row.amount_cents);
-      for (let m = 0; m < 12; m++) plannedByMonth[m] += amt;
-      byScope[row.scope].planned += amt * 12;
-      const c = bump(cats, row.category_id, row.category_name || 'Senza categoria', row.category_color || '#9aa4b2');
-      c.planned += amt * 12;
-    }
+
+    for (const row of actual.rows) actualByMonth[row.m - 1] = euros(row.total);
+    for (const row of planned.rows) applyPlanned(row);
+    for (const row of recurring.rows) applyPlanned(row);
     for (const row of actualByCat.rows) {
       const c = bump(cats, row.category_id, row.name, row.color);
       c.actual += euros(row.total);
@@ -262,6 +261,21 @@ router.get(
     );
     for (const row of actualScope.rows) byScope[row.scope].actual = euros(row.total);
 
+    // Real income for the year, per month — used only to estimate the
+    // potential monthly savings below; never mixed into the expense
+    // projection, since budget items here don't affect income tracking.
+    const incomeByMonth = Array(12).fill(0);
+    const income = await query(
+      `SELECT EXTRACT(MONTH FROM occurred_on)::int AS m, SUM(amount_cents) AS total
+       FROM transactions
+       WHERE user_id = $1 AND type = 'income'
+         AND occurred_on >= make_date($2, 1, 1)
+         AND occurred_on <  make_date($2 + 1, 1, 1)${scopeSql}
+       GROUP BY 1`,
+      [req.user.id, year]
+    );
+    for (const row of income.rows) incomeByMonth[row.m - 1] = euros(row.total);
+
     const round = (n) => Number(n.toFixed(2));
     const totalPlanned = round(plannedByMonth.reduce((a, b) => a + b, 0));
     const totalActual = round(actualByMonth.reduce((a, b) => a + b, 0));
@@ -274,6 +288,18 @@ router.get(
       else projected += m <= curMonth ? actualByMonth[m - 1] : plannedByMonth[m - 1];
     }
 
+    // "Quanto mi serve al mese" — le spese annuali smussate su 12 mesi insieme
+    // a quelle mensili — e "quanto potrei risparmiare" confrontandolo con le
+    // entrate reali medie dei mesi già trascorsi dell'anno scelto.
+    const monthlyBudgetNeed = round(totalPlanned / 12);
+    const elapsedMonths = year < curYear ? 12 : year > curYear ? 0 : curMonth;
+    const avgMonthlyIncome =
+      elapsedMonths > 0
+        ? round(incomeByMonth.slice(0, elapsedMonths).reduce((a, b) => a + b, 0) / elapsedMonths)
+        : null;
+    const potentialMonthlySavings =
+      avgMonthlyIncome != null ? round(avgMonthlyIncome - monthlyBudgetNeed) : null;
+
     res.json({
       year,
       includeRecurring: q.includeRecurring,
@@ -281,6 +307,9 @@ router.get(
       totalPlanned,
       totalActual,
       projectedYearEnd: round(projected),
+      monthlyBudgetNeed,
+      avgMonthlyIncome,
+      potentialMonthlySavings,
       months: plannedByMonth.map((p, i) => ({
         month: i + 1,
         planned: round(p),

@@ -4,6 +4,7 @@ const { pool } = require('../db/pool');
 
 const pad = (n) => String(n).padStart(2, '0');
 const monthStart = (d) => `${d.getUTCFullYear()}-${pad(d.getUTCMonth() + 1)}-01`;
+const monthOfYear = (key) => Number(key.slice(5, 7));
 
 function addMonthsKey(key, n) {
   const [y, m] = key.split('-').map(Number);
@@ -19,8 +20,9 @@ function occurredOn(monthKey, dayOfMonth) {
 /**
  * Create the movimenti that active recurring rules owe up to (and including)
  * the current month. A rule owes the current month only once the day of month
- * has arrived. Safe to run repeatedly — a unique index prevents duplicates and
- * each rule's last_run_month is advanced.
+ * has arrived. 'monthly' rules generate every month; 'yearly' rules only in
+ * their chosen month. Safe to run repeatedly — a unique index prevents
+ * duplicates and each rule's last_run_month is advanced.
  *
  * @param {object} [opts]
  * @param {number} [opts.userId]  limit to one user (used by the "run now" button)
@@ -55,9 +57,11 @@ async function generateDue({ userId, now = new Date() } = {}) {
         currentDay >= rule.day_of_month ? currentMonth : addMonthsKey(currentMonth, -1);
 
       if (lastDueMonth < fromMonth) continue; // nothing due
-      rulesTouched++;
+      let createdForRule = 0;
 
       for (let m = fromMonth; m <= lastDueMonth; m = addMonthsKey(m, 1)) {
+        if (rule.cadence === 'yearly' && monthOfYear(m) !== rule.month) continue; // not this rule's month
+
         const res = await client.query(
           `INSERT INTO transactions
              (user_id, type, amount_cents, category_id, account_id, recurring_rule_id, scope, note, occurred_on)
@@ -76,7 +80,9 @@ async function generateDue({ userId, now = new Date() } = {}) {
           ]
         );
         created += res.rowCount;
+        createdForRule += res.rowCount;
       }
+      if (createdForRule > 0) rulesTouched++;
 
       await client.query('UPDATE recurring_rules SET last_run_month = $2 WHERE id = $1', [
         rule.id,
