@@ -6,7 +6,7 @@ const rateLimit = require('express-rate-limit');
 const { z } = require('zod');
 
 const { query } = require('../db/pool');
-const { COOKIE_NAME, signSession, cookieOptions } = require('../auth/tokens');
+const { COOKIE_NAME, signSession, cookieOptions, clearOptions } = require('../auth/tokens');
 const { requireAuth } = require('../auth/middleware');
 const { handler, httpError } = require('../http/validate');
 const { createUser } = require('../auth/users');
@@ -25,6 +25,13 @@ const credentials = z.object({
   email: z.string().trim().toLowerCase().email().max(254),
   password: z.string().min(8, 'La password deve avere almeno 8 caratteri').max(200),
   displayName: z.string().trim().max(80).optional(),
+});
+
+// Login must not leak the password policy — accept any non-empty string and let
+// the credential check fail with a generic 401.
+const loginInput = z.object({
+  email: z.string().trim().toLowerCase().email().max(254),
+  password: z.string().min(1).max(200),
 });
 
 function setSession(res, user) {
@@ -74,7 +81,7 @@ router.post(
   '/login',
   authLimiter,
   handler(async (req, res) => {
-    const { email, password } = credentials.pick({ email: true, password: true }).parse(req.body);
+    const { email, password } = loginInput.parse(req.body);
 
     const found = await query(
       'SELECT id, email, password_hash, display_name FROM users WHERE email = $1',
@@ -92,7 +99,7 @@ router.post(
 );
 
 router.post('/logout', (req, res) => {
-  res.clearCookie(COOKIE_NAME, { path: '/' });
+  res.clearCookie(COOKIE_NAME, clearOptions());
   res.json({ ok: true });
 });
 
@@ -102,7 +109,7 @@ router.get(
   handler(async (req, res) => {
     const found = await query('SELECT id, email, display_name FROM users WHERE id = $1', [req.user.id]);
     if (found.rowCount === 0) {
-      res.clearCookie(COOKIE_NAME, { path: '/' });
+      res.clearCookie(COOKIE_NAME, clearOptions());
       throw httpError(401, 'not_authenticated', 'Sessione non valida');
     }
     const u = found.rows[0];

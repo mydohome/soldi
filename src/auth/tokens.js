@@ -27,15 +27,33 @@ function verifySession(token) {
   return jwt.verify(token, secret());
 }
 
+const cookieSecure = () =>
+  process.env.COOKIE_SECURE === 'true' || process.env.HTTPS_ENABLED === 'true';
+
 /** Options for res.cookie so the session cookie is safe by default. */
 function cookieOptions() {
   return {
     httpOnly: true,
     sameSite: 'lax',
-    secure: process.env.COOKIE_SECURE === 'true' || process.env.HTTPS_ENABLED === 'true',
+    secure: cookieSecure(),
     maxAge: TOKEN_TTL_SECONDS * 1000,
     path: '/',
   };
 }
 
-module.exports = { COOKIE_NAME, TOKEN_TTL_SECONDS, signSession, verifySession, cookieOptions };
+/**
+ * Options for res.clearCookie. Browsers only drop a cookie when path, secure and
+ * sameSite match those it was set with, so keep these in sync with cookieOptions.
+ */
+function clearOptions() {
+  return { httpOnly: true, sameSite: 'lax', secure: cookieSecure(), path: '/' };
+}
+
+module.exports = {
+  COOKIE_NAME,
+  TOKEN_TTL_SECONDS,
+  signSession,
+  verifySession,
+  cookieOptions,
+  clearOptions,
+};
