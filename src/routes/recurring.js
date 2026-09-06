@@ -21,6 +21,8 @@ const ruleShape = z.object({
   cadence: z.enum(['monthly', 'yearly']).default('monthly'),
   month: z.coerce.number().int().min(1).max(12).nullable().optional(),
   dayOfMonth: z.coerce.number().int().min(1).max(28).default(1),
+  // Numero di rate/occorrenze; null = a tempo indeterminato.
+  totalOccurrences: z.coerce.number().int().min(1).max(600).nullable().optional(),
   note: z.string().trim().max(280).default(''),
   active: z.boolean().default(true),
 });
@@ -51,6 +53,8 @@ function shape(row) {
     cadence: row.cadence,
     month: row.month,
     dayOfMonth: row.day_of_month,
+    totalOccurrences: row.total_occurrences,
+    occurrencesDone: row.occurrences_done ?? null,
     note: row.note,
     active: row.active,
     startMonth: d(row.start_month),
@@ -65,7 +69,8 @@ async function assertOwned(table, label, userId, id) {
 }
 
 const SELECT_RULE = `
-  SELECT r.*, c.name AS category_name, c.color AS category_color, a.name AS account_name
+  SELECT r.*, c.name AS category_name, c.color AS category_color, a.name AS account_name,
+         (SELECT COUNT(*)::int FROM transactions t WHERE t.recurring_rule_id = r.id) AS occurrences_done
   FROM recurring_rules r
   LEFT JOIN categories c ON c.id = r.category_id
   LEFT JOIN accounts   a ON a.id = r.account_id`;
@@ -89,8 +94,8 @@ router.post(
 
     const inserted = await query(
       `INSERT INTO recurring_rules
-         (user_id, name, type, amount_cents, category_id, account_id, scope, cadence, month, day_of_month, note, active)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
+         (user_id, name, type, amount_cents, category_id, account_id, scope, cadence, month, day_of_month, total_occurrences, note, active)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
        RETURNING id`,
       [
         req.user.id,
@@ -103,6 +108,7 @@ router.post(
         input.cadence,
         input.cadence === 'yearly' ? input.month : null,
         input.dayOfMonth,
+        input.totalOccurrences ?? null,
         input.note,
         input.active,
       ]
@@ -138,6 +144,7 @@ router.patch(
                      ELSE month
                    END,
            day_of_month = COALESCE($13, day_of_month),
+           total_occurrences = CASE WHEN $16::boolean THEN $17 ELSE total_occurrences END,
            note = COALESCE($14, note),
            -- On reactivation, resume from the current month: don't backfill the
            -- months the rule spent switched off.
@@ -165,6 +172,8 @@ router.patch(
         patch.dayOfMonth ?? null,
         patch.note ?? null,
         patch.active ?? null,
+        'totalOccurrences' in patch,
+        patch.totalOccurrences ?? null,
       ]
     );
     if (updated.rowCount === 0) throw httpError(404, 'not_found', 'Spesa fissa non trovata');

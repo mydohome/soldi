@@ -665,6 +665,12 @@ async function viewSpeseFisse(main) {
           r.cadence === 'monthly'
             ? 'ogni mese, il ' + r.dayOfMonth
             : 'ogni anno a ' + MONTHS_LONG[(r.month || 1) - 1] + ', il ' + r.dayOfMonth
+        }${
+          r.totalOccurrences != null
+            ? ` · ${Math.min(r.occurrencesDone ?? 0, r.totalOccurrences)}/${r.totalOccurrences} ${
+                r.cadence === 'yearly' ? 'occorrenze' : 'rate'
+              }`
+            : ''
         }${r.categoryName ? ' · ' + escapeHtml(r.categoryName) : ''}${
           r.accountName ? ' · ' + escapeHtml(r.accountName) : ''
         }</div>
@@ -793,6 +799,7 @@ async function openRecurringModal(rule = null, onChange) {
     cadence: 'monthly',
     month: new Date().getUTCMonth() + 1,
     dayOfMonth: 1,
+    totalOccurrences: null,
     note: '',
     active: true,
   };
@@ -862,6 +869,19 @@ async function openRecurringModal(rule = null, onChange) {
       </div>
       <label class="switch-row" style="margin-bottom:4px">
         <span class="switch">
+          <input type="checkbox" id="rdur" ${r.totalOccurrences != null ? 'checked' : ''} />
+          <span class="switch-track"></span>
+        </span>
+        <span class="switch-label ${r.totalOccurrences != null ? 'on' : ''}">Durata limitata</span>
+      </label>
+      <div class="field" id="rdur-field" ${r.totalOccurrences != null ? '' : 'hidden'}>
+        <label for="rmonths">Numero di rate</label>
+        <input id="rmonths" name="totalOccurrences" type="number" min="1" max="600" inputmode="numeric"
+               value="${r.totalOccurrences ?? ''}" placeholder="Es. 12" />
+        <span class="muted" id="rdur-hint" style="font-size:.82rem"></span>
+      </div>
+      <label class="switch-row" style="margin-bottom:4px">
+        <span class="switch">
           <input type="checkbox" id="ractive" ${r.active ? 'checked' : ''} />
           <span class="switch-track"></span>
         </span>
@@ -899,12 +919,37 @@ async function openRecurringModal(rule = null, onChange) {
     fillCats(catSel.value || r.categoryId);
   });
 
+  const durInput = form.querySelector('#rdur');
+  const durField = form.querySelector('#rdur-field');
+  const durHint = form.querySelector('#rdur-hint');
+  const monthsInput = form.querySelector('#rmonths');
+  const updateDurHint = () => {
+    const n = Number(monthsInput.value);
+    if (!durInput.checked || !(n >= 1)) {
+      durHint.textContent = '';
+      return;
+    }
+    const word = cadence === 'yearly' ? (n === 1 ? 'anno' : 'anni') : n === 1 ? 'rata' : 'rate';
+    durHint.textContent =
+      `${n} ${word}, poi si disattiva da sola.` +
+      (editing && r.occurrencesDone ? ` Finora generate: ${r.occurrencesDone}.` : '');
+  };
+  durInput.addEventListener('change', () => {
+    durField.hidden = !durInput.checked;
+    durInput.closest('.switch-row').querySelector('.switch-label').classList.toggle('on', durInput.checked);
+    if (durInput.checked && !monthsInput.value) monthsInput.focus();
+    updateDurHint();
+  });
+  monthsInput.addEventListener('input', updateDurHint);
+  updateDurHint();
+
   form.querySelector('#rcad-seg').addEventListener('click', (e) => {
     const b = e.target.closest('button');
     if (!b) return;
     cadence = b.dataset.c;
     form.querySelectorAll('#rcad-seg button').forEach((x) => x.classList.toggle('active', x === b));
     form.querySelector('#rmonth-field').hidden = cadence !== 'yearly';
+    updateDurHint();
   });
 
   const scopeInput = form.querySelector('#rscope');
@@ -919,6 +964,11 @@ async function openRecurringModal(rule = null, onChange) {
   form.addEventListener('submit', async (e) => {
     e.preventDefault();
     const fd = Object.fromEntries(new FormData(form));
+    const occ = durInput.checked ? Number(fd.totalOccurrences) : null;
+    if (durInput.checked && !(occ >= 1)) {
+      form.querySelector('#rec-err').textContent = 'Inserisci il numero di rate (almeno 1)';
+      return;
+    }
     const body = {
       name: fd.name,
       type,
@@ -926,6 +976,7 @@ async function openRecurringModal(rule = null, onChange) {
       cadence,
       month: cadence === 'yearly' ? Number(fd.month) : null,
       dayOfMonth: Number(fd.dayOfMonth),
+      totalOccurrences: occ,
       categoryId: fd.categoryId ? Number(fd.categoryId) : null,
       accountId: fd.accountId ? Number(fd.accountId) : null,
       scope,
