@@ -68,6 +68,16 @@ CREATE TABLE IF NOT EXISTS planned_expenses (
   created_at   TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
+-- Piano di risparmio (menu "Risparmio"): una riga per utente.
+-- emergency_split = % del margine mensile destinata al fondo sicurezza finché
+-- non ha raggiunto emergency_months mensilità di spese; il resto va al risparmio.
+CREATE TABLE IF NOT EXISTS savings_settings (
+  user_id          BIGINT PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
+  emergency_months INT NOT NULL DEFAULT 3 CHECK (emergency_months BETWEEN 1 AND 24),
+  emergency_split  INT NOT NULL DEFAULT 70 CHECK (emergency_split BETWEEN 0 AND 100),
+  updated_at       TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
 CREATE TABLE IF NOT EXISTS transactions (
   id                BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
   user_id           BIGINT NOT NULL REFERENCES users(id) ON DELETE CASCADE,

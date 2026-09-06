@@ -56,6 +56,8 @@ export const api = {
   runRecurring: () => request('POST', '/api/recurring/run'),
   planned: () => request('GET', '/api/planned'),
   plannedSummary: (qs = '') => request('GET', `/api/planned/summary${qs ? `?${qs}` : ''}`),
+  savings: () => request('GET', '/api/savings'),
+  savingsUpdate: (b) => request('PATCH', '/api/savings', b),
   backups: () => request('GET', '/api/backups'),
   version: () => request('GET', '/api/settings/version'),
   checkUpdate: () => request('GET', '/api/settings/check-update'),

@@ -36,7 +36,7 @@ async function createBackup({ root = BACKUP_ROOT, keep = KEEP, label = 'auto' } 
 
   for (const table of TABLES) {
     const { rows } = await pool.query(
-      `SELECT ${table.columns.join(', ')} FROM ${table.name} ORDER BY id`
+      `SELECT ${table.columns.join(', ')} FROM ${table.name} ORDER BY ${table.columns[0]}`
     );
     const csv = stringify(rows, {
       header: true,
