@@ -1,0 +1,113 @@
+# Soldi dietro un reverse proxy su rete Docker (es. Nginx Proxy Manager),
+# SENZA pubblicare porte sull'host.
+#
+#   docker compose -f docker-compose.npm.yml up -d --build
+#
+# Differenze rispetto a docker-compose.yml:
+#   - nessun "ports:" — il proxy raggiunge il container per nome sulla sua rete
+#   - "web" sta su "proxy-net" (la rete del proxy) + "backend" (verso il DB)
+#   - "db" sta SOLO su "backend" (internal: true): mai raggiungibile dal proxy
+#   - container_name fissi, così il proxy può puntare a http://soldi-web:3000
+#
+# Prerequisiti:
+#   1. la rete del proxy deve esistere già ed essere "external". Con Nginx Proxy
+#      Manager installato via compose di solito si chiama "npm_default":
+#        docker network ls | grep -i npm
+#      Adegua il nome più sotto (networks: proxy-net: name:) oppure crea la rete:
+#        docker network create proxy-net
+#   2. nel .env:  HTTPS_ENABLED=true  e  COOKIE_SECURE=true  (NPM termina il TLS)
+#   3. in NPM: Proxy Host → Forward Hostname "soldi-web", Forward Port 3000,
+#      "Websockets Support" ON, "Block Common Exploits" ON, SSL con "Force SSL".
+
+services:
+  db:
+    image: postgres:16-alpine
+    container_name: soldi-db
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${PGUSER:-soldi}
+      POSTGRES_PASSWORD: ${PGPASSWORD:-soldi}
+      POSTGRES_DB: ${PGDATABASE:-soldi}
+    volumes:
+      - db-data:/var/lib/postgresql/data
+    networks:
+      - backend
+    security_opt:
+      - no-new-privileges:true
+    mem_limit: 512m
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${PGUSER:-soldi} -d ${PGDATABASE:-soldi}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+
+  web:
+    build:
+      context: .
+      args:
+        GIT_SHA: ${GIT_SHA:-}
+    container_name: soldi-web
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+    # Per l'aggiornamento in-app (Impostazioni → Aggiorna) il processo deve poter
+    # scrivere in /repo: fallo girare come l'utente host che possiede il checkout.
+    # Ricava gli id con:  id -u   e   getent group docker | cut -d: -f3
+    # poi:  echo "PUID=$(id -u)"  e  "PGID=<gid docker>"  nel .env
+    user: "${PUID:-1000}:${PGID:-1000}"
+    environment:
+      NODE_ENV: production
+      PORT: 3000
+      PGHOST: db
+      PGPORT: 5432
+      PGUSER: ${PGUSER:-soldi}
+      PGPASSWORD: ${PGPASSWORD:-soldi}
+      PGDATABASE: ${PGDATABASE:-soldi}
+      JWT_SECRET: ${JWT_SECRET:?imposta JWT_SECRET nel file .env}
+      HTTPS_ENABLED: ${HTTPS_ENABLED:-true}
+      COOKIE_SECURE: ${COOKIE_SECURE:-true}
+      TRUST_PROXY: ${TRUST_PROXY:-1}
+      ALLOW_REGISTRATION: ${ALLOW_REGISTRATION:-false}
+      BACKUP_ENABLED: ${BACKUP_ENABLED:-true}
+      BACKUP_CRON: ${BACKUP_CRON:-0 3 * * 0}
+      BACKUP_KEEP: ${BACKUP_KEEP:-8}
+      BACKUP_DIR: /app/backups
+      RECURRING_ENABLED: ${RECURRING_ENABLED:-true}
+      RECURRING_CRON: ${RECURRING_CRON:-5 6 * * *}
+      TZ: ${TZ:-Europe/Rome}
+      SELF_UPDATE_ENABLED: ${SELF_UPDATE_ENABLED:-false}
+    volumes:
+      - ./backups:/app/backups
+      - .:/repo
+      - ./src:/app/src
+      - ./public:/app/public
+    networks:
+      - proxy-net
+      - backend
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    mem_limit: 512m
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+networks:
+  proxy-net:
+    external: true
+    # name: npm_default   # scommenta e adegua se la rete del proxy ha un altro nome
+  backend:
+    internal: true
+
+volumes:
+  db-data:

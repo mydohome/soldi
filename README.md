@@ -16,6 +16,7 @@ Funziona da smartphone e da desktop (interfaccia responsive), gira interamente c
 - [Caratteristiche](#caratteristiche)
 - [Avvio rapido](#avvio-rapido)
 - [Deploy su un server (Debian)](#deploy-su-un-server-debian)
+- [Dietro un reverse proxy (Nginx Proxy Manager)](#dietro-un-reverse-proxy-nginx-proxy-manager)
 - [Configurazione (.env)](#configurazione-env)
 - [Uso](#uso)
 - [Gestione utenti](#gestione-utenti)
@@ -135,12 +136,7 @@ di proprietà dell'utente con UID 1000 (di solito il primo utente); altrimenti u
 
 **HTTP diretto** (`http://IP_SERVER:3010`): lascia `HTTPS_ENABLED=false` (default).
 
-**HTTPS / dominio:** metti l'app dietro un reverse proxy (nginx, Caddy, Traefik) che
-gestisce il certificato e inoltra a `127.0.0.1:3010`. In quel caso, nel `.env`:
-
-```
-HTTPS_ENABLED=true
-```
+**HTTPS / dominio:** vedi la sezione [Dietro un reverse proxy](#dietro-un-reverse-proxy-nginx-proxy-manager) qui sotto.
 
 **Backup fuori dal server:** la cartella `./backups` contiene i CSV settimanali.
 Sincronizzala altrove, es. con cron:
@@ -155,13 +151,76 @@ Docker li riavvia da solo se il server si riavvia (basta che il servizio `docker
 
 ---
 
+## Dietro un reverse proxy (Nginx Proxy Manager)
+
+Due modi, a seconda di dove sta il proxy.
+
+### Il proxy è sullo stesso host
+
+Tieni `docker-compose.yml`, ma pubblica la porta solo in locale e lascia che sia
+il proxy a esporla. Nel `.env`:
+
+```
+BIND_ADDR=127.0.0.1
+HOST_PORT=3010
+HTTPS_ENABLED=true      # il proxy termina il TLS
+COOKIE_SECURE=true
+TRUST_PROXY=1
+```
+
+Nel proxy: inoltra a `http://127.0.0.1:3010`.
+
+### Il proxy è su una rete Docker (nessuna porta pubblicata)
+
+Usa `docker-compose.npm.yml`: il container applicativo sta sulla rete del proxy
+e non pubblica **nessuna** porta; il database resta su una rete `internal`,
+irraggiungibile dal proxy e da Internet.
+
+```bash
+# la rete del proxy dev'essere già esistente ed "external"
+docker network ls | grep -i npm            # es. "npm_default"
+# se serve, adegua il nome in docker-compose.npm.yml (networks: proxy-net: name:)
+
+cp .env.example .env
+sed -i "s/^JWT_SECRET=.*/JWT_SECRET=$(openssl rand -hex 32)/" .env
+sed -i "s/^PGPASSWORD=.*/PGPASSWORD=$(openssl rand -hex 16)/" .env
+sed -i "s/^HTTPS_ENABLED=.*/HTTPS_ENABLED=true/" .env
+sed -i "s/^COOKIE_SECURE=.*/COOKIE_SECURE=true/" .env
+
+docker compose -f docker-compose.npm.yml up -d --build
+```
+
+Nel proxy (NPM → *Proxy Hosts → Add*): **Forward Hostname** `soldi-web`,
+**Forward Port** `3000`, *Websockets Support* ON, *Block Common Exploits* ON,
+scheda SSL con *Force SSL*.
+
+Per gli aggiornamenti da riga di comando, indica il file compose:
+
+```bash
+COMPOSE_FILE=docker-compose.npm.yml ./scripts/update.sh
+```
+
+L'**aggiornamento dall'app** (Impostazioni → Aggiorna) richiede che il processo
+possa scrivere in `/repo`: in `docker-compose.npm.yml` il container gira come
+`${PUID}:${PGID}`. Ricava gli id sull'host e mettili nel `.env`:
+
+```bash
+echo "PUID=$(id -u)"                          >> .env
+echo "PGID=$(getent group docker | cut -d: -f3)" >> .env
+```
+
+---
+
 ## Configurazione (.env)
 
 | Variabile | Default | Descrizione |
 |---|---|---|
-| `HOST_PORT` | `3000` | Porta pubblicata sull'host (es. `3010` su un server). L'app nel container resta sempre sulla 3000. |
+| `HOST_PORT` | `3000` | Porta pubblicata sull'host (es. `3010` su un server). L'app nel container resta sempre sulla 3000. Ignorata con `docker-compose.npm.yml`. |
+| `BIND_ADDR` | `0.0.0.0` | Indirizzo host a cui è legata la porta. `127.0.0.1` se un reverse proxy gira sullo stesso host (l'app diventa raggiungibile solo tramite il proxy). |
 | `JWT_SECRET` | — (**obbligatorio**) | Segreto per firmare i cookie di sessione. Usa `openssl rand -hex 32`. |
 | `HTTPS_ENABLED` | `false` | `true` **solo** se l'app è raggiunta via HTTPS. Attiva HSTS, `upgrade-insecure-requests` e cookie `Secure`. In HTTP puro lascialo `false`, altrimenti la pagina resta bloccata su «Carico Soldi…». |
+| `COOKIE_SECURE` | `false` | Forza il flag `Secure` sul cookie di sessione a prescindere da `HTTPS_ENABLED`. Di norma tienilo uguale a `HTTPS_ENABLED`. |
+| `TRUST_PROXY` | `1` | Numero di reverse proxy davanti all'app (Express *trust proxy*). `1` = un proxy (NPM, nginx…). `0` se l'app è esposta direttamente. |
 | `ALLOW_REGISTRATION` | `true` | `false` = niente registrazione di nuovi utenti dalla schermata di login (resta possibile finché non esiste alcun utente, per il primo account). |
 | `TZ` | `Europe/Rome` | Fuso orario del container (influenza l'orario del backup). |
 | `PGUSER` / `PGPASSWORD` / `PGDATABASE` | `soldi` | Credenziali PostgreSQL. |

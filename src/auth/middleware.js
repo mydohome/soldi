@@ -1,6 +1,6 @@
 'use strict';
 
-const { COOKIE_NAME, verifySession } = require('./tokens');
+const { COOKIE_NAME, verifySession, clearOptions } = require('./tokens');
 
 /**
  * Require a valid session cookie. On success attaches `req.user = { id, email }`.
@@ -15,7 +15,7 @@ function requireAuth(req, res, next) {
     req.user = { id: Number(payload.sub), email: payload.email };
     return next();
   } catch {
-    res.clearCookie(COOKIE_NAME, { path: '/' });
+    res.clearCookie(COOKIE_NAME, clearOptions());
     return res.status(401).json({ error: 'session_expired' });
   }
 }

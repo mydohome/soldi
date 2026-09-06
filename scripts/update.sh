@@ -20,7 +20,12 @@ warn() { printf "${c_err}  %s${c_off}\n" "$1"; }
 die()  { printf "\n${c_err}✗ %s${c_off}\n" "$1" >&2; exit 1; }
 
 # --- prerequisiti ------------------------------------------------------------
-[ -f docker-compose.yml ] || die "docker-compose.yml non trovato. Esegui lo script dalla cartella del progetto."
+# COMPOSE_FILE (variabile standard di docker compose) permette di usare un file
+# alternativo, es.  COMPOSE_FILE=docker-compose.npm.yml ./scripts/update.sh
+if [ -z "${COMPOSE_FILE:-}" ] && [ ! -f docker-compose.yml ]; then
+  die "docker-compose.yml non trovato. Esegui lo script dalla cartella del progetto,
+   oppure imposta COMPOSE_FILE=<file> se usi un compose alternativo."
+fi
 [ -f .env ]               || die "File .env mancante: crealo da .env.example prima di aggiornare."
 command -v git >/dev/null || die "git non installato."
 
@@ -127,13 +132,14 @@ log "Ricostruisco e riavvio i container…"
 GIT_SHA="$(git rev-parse HEAD)" $DC up -d --build
 
 # --- 4. attesa + verifica -------------------------------------------
-port="$(grep -E '^HOST_PORT=' .env | head -1 | cut -d= -f2 | tr -d ' "')"
-port="${port:-3000}"
+# Sonda /api/health DENTRO il container: funziona anche quando non è pubblicata
+# alcuna porta sull'host (deploy dietro un reverse proxy su rete Docker).
+health_check='fetch("http://127.0.0.1:3000/api/health").then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))'
 
-log "Attendo che l'app risponda su :$port…"
+log "Attendo che l'app risponda…"
 for _ in $(seq 1 40); do
-  if curl -fsS "http://localhost:${port}/api/health" >/dev/null 2>&1; then
-    ok "Soldi è aggiornato e risponde su http://localhost:${port}"
+  if $DC exec -T web node -e "$health_check" >/dev/null 2>&1; then
+    ok "Soldi è aggiornato e risponde."
     $DC ps
     exit 0
   fi

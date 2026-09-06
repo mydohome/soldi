@@ -8,11 +8,20 @@ services:
       POSTGRES_DB: ${PGDATABASE:-soldi}
     volumes:
       - db-data:/var/lib/postgresql/data
+    security_opt:
+      - no-new-privileges:true
+    mem_limit: 512m
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U ${PGUSER:-soldi} -d ${PGDATABASE:-soldi}"]
       interval: 10s
       timeout: 5s
       retries: 5
+      start_period: 10s
 
   web:
     build:
@@ -37,18 +46,34 @@ services:
       # per un deploy in HTTP puro (http://server:3010).
       HTTPS_ENABLED: ${HTTPS_ENABLED:-false}
       COOKIE_SECURE: ${COOKIE_SECURE:-false}
+      # Numero di reverse proxy davanti all'app (Express "trust proxy"). 1 = un
+      # solo proxy (NPM, nginx…). 0 se l'app è esposta direttamente.
+      TRUST_PROXY: ${TRUST_PROXY:-1}
       ALLOW_REGISTRATION: ${ALLOW_REGISTRATION:-true}
       BACKUP_ENABLED: ${BACKUP_ENABLED:-true}
       BACKUP_CRON: ${BACKUP_CRON:-0 3 * * 0}
       BACKUP_KEEP: ${BACKUP_KEEP:-8}
       BACKUP_DIR: /app/backups
+      RECURRING_ENABLED: ${RECURRING_ENABLED:-true}
+      RECURRING_CRON: ${RECURRING_CRON:-5 6 * * *}
       TZ: ${TZ:-Europe/Rome}
       # Aggiornamento dall'app (Impostazioni → Aggiorna). true = attivo.
       # Richiede i mount qui sotto: fa `git pull` + riavvio, senza rebuild dell'immagine.
       SELF_UPDATE_ENABLED: ${SELF_UPDATE_ENABLED:-false}
     ports:
-      # <porta pubblicata sull'host>:<porta interna del container, fissa>
-      - "${HOST_PORT:-3000}:3000"
+      # <indirizzo host>:<porta host>:<porta interna del container, fissa>.
+      # BIND_ADDR=127.0.0.1 espone la porta solo a un reverse proxy sullo stesso
+      # host. Dietro un proxy su rete Docker si usa docker-compose.npm.yml, che
+      # non pubblica alcuna porta.
+      - "${BIND_ADDR:-0.0.0.0}:${HOST_PORT:-3000}:3000"
+    security_opt:
+      - no-new-privileges:true
+    mem_limit: 512m
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
     volumes:
       - ./backups:/app/backups
       # Aggiornamento dall'app: il repo è montato su /repo e il suo codice

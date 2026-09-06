@@ -235,8 +235,15 @@ router.get(
     function applyPlanned(row) {
       const amt = euros(row.amount_cents);
       const annual = row.cadence === 'monthly' ? amt * 12 : amt;
-      const months = row.cadence === 'monthly' ? [...Array(12).keys()].map((i) => i + 1) : [row.month];
-      for (const m of months) plannedByMonth[m - 1] += amt;
+      if (row.cadence === 'monthly') {
+        for (let i = 0; i < 12; i++) plannedByMonth[i] += amt;
+      } else if (row.month != null) {
+        plannedByMonth[row.month - 1] += amt;
+      } else {
+        // Yearly item with no month set (legacy data): spread it over the year
+        // so every total stays consistent.
+        for (let i = 0; i < 12; i++) plannedByMonth[i] += amt / 12;
+      }
       byScope[row.scope].planned += annual;
       const c = bump(cats, row.category_id, row.category_name || 'Senza categoria', row.category_color || '#9aa4b2');
       c.planned += annual;
