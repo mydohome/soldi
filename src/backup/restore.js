@@ -98,6 +98,10 @@ async function main() {
     for (const { table, columns, rows } of parsed) {
       if (rows.length === 0) continue;
       const colList = columns.join(', ');
+      // Only tables with a GENERATED ALWAYS AS IDENTITY "id" need the override
+      // and the sequence reset; config tables keyed by user_id do not.
+      const hasIdentityId = table.columns.includes('id');
+      const overriding = hasIdentityId ? 'OVERRIDING SYSTEM VALUE ' : '';
       // insert in chunks to keep parameter counts sane
       const CHUNK = Math.max(1, Math.floor(60000 / columns.length));
       for (let i = 0; i < rows.length; i += CHUNK) {
@@ -111,19 +115,21 @@ async function main() {
           return `(${placeholders.join(', ')})`;
         });
         await client.query(
-          `INSERT INTO ${table.name} (${colList}) OVERRIDING SYSTEM VALUE VALUES ${tuples.join(', ')}`,
+          `INSERT INTO ${table.name} (${colList}) ${overriding}VALUES ${tuples.join(', ')}`,
           values
         );
       }
 
-      await client.query(
-        `SELECT setval(
-           pg_get_serial_sequence($1, 'id'),
-           GREATEST((SELECT COALESCE(MAX(id), 0) FROM ${table.name}), 1),
-           (SELECT COUNT(*) FROM ${table.name}) > 0
-         )`,
-        [table.name]
-      );
+      if (hasIdentityId) {
+        await client.query(
+          `SELECT setval(
+             pg_get_serial_sequence($1, 'id'),
+             GREATEST((SELECT COALESCE(MAX(id), 0) FROM ${table.name}), 1),
+             (SELECT COUNT(*) FROM ${table.name}) > 0
+           )`,
+          [table.name]
+        );
+      }
       console.log(`[restore]   ${table.name}: ${rows.length} rows restored`);
     }
   });

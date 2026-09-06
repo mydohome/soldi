@@ -203,6 +203,7 @@ const NAV = [
   { id: 'dashboard', label: 'Dashboard', short: 'Home', icon: icons.dashboard },
   { id: 'movimenti', label: 'Movimenti', short: 'Movim.', icon: icons.list },
   { id: 'previsioni', label: 'Previsioni', short: 'Prev.', icon: icons.target },
+  { id: 'risparmio', label: 'Risparmio', short: 'Rispar.', icon: icons.wallet },
   { id: 'fisse', label: 'Spese fisse', short: 'Fisse', icon: icons.repeat },
   { id: 'categorie', label: 'Categorie', short: 'Cat.', icon: icons.tag },
   { id: 'conti', label: 'Conti', icon: icons.bank },
@@ -266,6 +267,7 @@ function renderView() {
     dashboard: viewDashboard,
     movimenti: viewMovimenti,
     previsioni: viewPrevisioni,
+    risparmio: viewRisparmio,
     fisse: viewSpeseFisse,
     categorie: viewCategorie,
     conti: viewConti,
@@ -1149,6 +1151,153 @@ async function viewPrevisioni(main) {
       }
     })
   );
+}
+
+/* ------------------------------------------------------------------ risparmio */
+async function viewRisparmio(main) {
+  let d;
+  try {
+    d = await api.savings();
+  } catch (e) {
+    main.innerHTML = `<div class="empty">${escapeHtml(e.message)}</div>`;
+    return;
+  }
+
+  const pct = (n) => `${(Math.round(n * 10) / 10).toString().replace('.', ',')}%`;
+  const head = `
+    <div class="page-head">
+      <div><h1>Risparmio</h1><p>Quanto destinare a fondo sicurezza e fondo risparmio</p></div>
+    </div>`;
+
+  main.innerHTML = '';
+
+  if (!d.ready) {
+    main.appendChild(
+      h(`
+      <div>
+        ${head}
+        <div class="card card-pad">
+          <p class="muted" style="font-size:.92rem">
+            Servono almeno <strong>${d.monthsNeeded} mesi completi</strong> di movimenti per una
+            stima affidabile. Finora ne ho <strong>${d.monthsAvailable}</strong>. Continua a
+            registrare entrate e uscite: torna qui tra qualche settimana.
+          </p>
+        </div>
+      </div>`)
+    );
+    return;
+  }
+
+  const s = d.settings;
+  const relColor =
+    { alta: 'var(--income)', media: 'var(--warn)', bassa: 'var(--expense)' }[d.reliability] ||
+    'var(--ink-faint)';
+  const trend =
+    d.income.trendPct > 1
+      ? `in crescita (+${pct(d.income.trendPct)}/anno)`
+      : d.income.trendPct < -1
+        ? `in calo (${pct(d.income.trendPct)}/anno)`
+        : 'stabili';
+
+  main.appendChild(
+    h(`
+    <div>
+      ${head}
+
+      <div class="grid cols-3">
+        <div class="card stat income">
+          <span class="label">Entrate previste / mese</span>
+          <span class="value">${fmtEur(d.income.predicted)}</span>
+          <span class="sub">${trend}</span>
+        </div>
+        <div class="card stat expense">
+          <span class="label">Uscite previste / mese</span>
+          <span class="value">${fmtEur(d.expense.predicted)}</span>
+          <span class="sub">fisse ${fmtEur(d.expense.committed)} · variabili ${fmtEur(d.expense.variable)}</span>
+        </div>
+        <div class="card stat">
+          <span class="label">Margine disponibile / mese</span>
+          <span class="value" style="color:${d.allocatable > 0 ? 'var(--income)' : 'var(--expense)'}">${fmtEur(d.allocatable)}</span>
+          <span class="sub">margine ${fmtEur(d.margin)} − cuscinetto ${fmtEur(d.buffer)}</span>
+        </div>
+      </div>
+
+      <h2 class="section-title">Proposta</h2>
+      <div class="card card-pad">
+        ${
+          d.allocatable <= 0
+            ? `<p class="muted" style="font-size:.92rem">Le uscite previste assorbono tutte le entrate: al momento non c'è un margine da destinare ai fondi. Riduci le spese variabili o rivedi le spese fisse.</p>`
+            : `
+        <div class="fund-row">
+          <span class="fund-name"><span class="fund-dot safety"></span>Fondo sicurezza</span>
+          <span class="fund-figs"><strong>${pct(d.rates.emergency)}</strong><span>${fmtEur(d.monthly.emergency)}/mese</span></span>
+        </div>
+        <p class="fund-note">
+          Obiettivo: ${s.emergencyMonths} mesi di spese = <strong>${fmtEur(d.emergencyFund.targetAmount)}</strong>.${
+            d.emergencyFund.monthsToFillFromZero
+              ? ` Partendo da zero, pieno in ~${d.emergencyFund.monthsToFillFromZero} mesi.`
+              : ''
+          }
+        </p>
+        <div class="fund-row">
+          <span class="fund-name"><span class="fund-dot save"></span>Fondo risparmio</span>
+          <span class="fund-figs"><strong>${pct(d.rates.savings)}</strong><span>${fmtEur(d.monthly.savings)}/mese</span></span>
+        </div>
+        <p class="fund-note">
+          In totale metteresti da parte il <strong>${pct(d.rates.total)}</strong> delle entrate.
+          Quando il fondo sicurezza è pieno puoi spostare la sua quota sul risparmio.
+        </p>`
+        }
+      </div>
+
+      <h2 class="section-title">Regola</h2>
+      <div class="card card-pad">
+        <div class="slider-row">
+          <label for="s-months">Mesi di spese nel fondo sicurezza</label>
+          <output id="s-months-out">${s.emergencyMonths}</output>
+        </div>
+        <input type="range" id="s-months" min="1" max="12" step="1" value="${s.emergencyMonths}" />
+        <div class="slider-row" style="margin-top:16px">
+          <label for="s-split">Priorità al fondo sicurezza, finché non è pieno</label>
+          <output id="s-split-out">${s.emergencySplit}%</output>
+        </div>
+        <input type="range" id="s-split" min="0" max="100" step="5" value="${s.emergencySplit}" />
+      </div>
+
+      <div class="card card-pad" style="margin-top:16px">
+        <p class="muted" style="font-size:.9rem">
+          ${
+            d.historicalSavingsRate != null
+              ? `Nei mesi scorsi hai messo da parte in media il <strong>${pct(d.historicalSavingsRate)}</strong> delle entrate.`
+              : 'Non ho abbastanza mesi con entrate per stimare quanto risparmi di solito.'
+          }
+          <br>Affidabilità della stima:
+          <strong style="color:${relColor}">${d.reliability}</strong> (${d.monthsAvailable} mesi di dati).
+        </p>
+      </div>
+    </div>
+  `)
+  );
+
+  const monthsEl = main.querySelector('#s-months');
+  const splitEl = main.querySelector('#s-split');
+  const monthsOut = main.querySelector('#s-months-out');
+  const splitOut = main.querySelector('#s-split-out');
+  monthsEl.addEventListener('input', () => (monthsOut.textContent = monthsEl.value));
+  splitEl.addEventListener('input', () => (splitOut.textContent = splitEl.value + '%'));
+  const persist = async () => {
+    try {
+      await api.savingsUpdate({
+        emergencyMonths: Number(monthsEl.value),
+        emergencySplit: Number(splitEl.value),
+      });
+      viewRisparmio(main);
+    } catch (e) {
+      toast(e.message, 'error');
+    }
+  };
+  monthsEl.addEventListener('change', persist);
+  splitEl.addEventListener('change', persist);
 }
 
 async function openPlannedModal(item = null, onChange) {

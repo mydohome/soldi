@@ -599,6 +599,43 @@ button { cursor: pointer; }
   cursor: pointer;
 }
 .suggest-line .sug-apply:hover { background: color-mix(in srgb, var(--brand) 22%, transparent); }
+
+/* ---------- Risparmio ---------- */
+.fund-row {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 10px 0 2px;
+}
+.fund-name { display: inline-flex; align-items: center; gap: 8px; font-weight: 650; }
+.fund-dot { width: 10px; height: 10px; border-radius: 50%; flex: none; }
+.fund-dot.safety { background: var(--warn); }
+.fund-dot.save { background: var(--income); }
+.fund-figs { display: inline-flex; align-items: baseline; gap: 10px; white-space: nowrap; }
+.fund-figs strong { font-size: 1.25rem; font-variant-numeric: tabular-nums; }
+.fund-figs span { color: var(--ink-faint); font-size: 0.85rem; }
+.fund-note { color: var(--ink-soft); font-size: 0.85rem; margin: 0 0 8px; }
+
+.slider-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  font-size: 0.88rem;
+  font-weight: 600;
+  color: var(--ink-soft);
+}
+.slider-row output {
+  font-variant-numeric: tabular-nums;
+  color: var(--brand);
+  font-weight: 700;
+}
+.card-pad input[type='range'] {
+  width: 100%;
+  margin-top: 6px;
+  accent-color: var(--brand);
+}
 .row-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; align-items: start; }
 @media (max-width: 560px) { .row-2 { grid-template-columns: 1fr; } }
 

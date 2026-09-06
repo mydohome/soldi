@@ -68,4 +68,8 @@ module.exports = [
       'created_at',
     ],
   },
+  {
+    name: 'savings_settings',
+    columns: ['user_id', 'emergency_months', 'emergency_split', 'updated_at'],
+  },
 ];
