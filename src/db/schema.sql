@@ -45,6 +45,9 @@ CREATE TABLE IF NOT EXISTS recurring_rules (
   cadence        TEXT NOT NULL DEFAULT 'monthly' CHECK (cadence IN ('monthly', 'yearly')),
   month          INT CHECK (month BETWEEN 1 AND 12),
   day_of_month   INT NOT NULL DEFAULT 1 CHECK (day_of_month BETWEEN 1 AND 28),
+  -- Numero di occorrenze (rate) da generare; NULL = a tempo indeterminato.
+  -- Raggiunto il limite la regola si disattiva da sola.
+  total_occurrences INT CHECK (total_occurrences IS NULL OR total_occurrences BETWEEN 1 AND 600),
   note           TEXT NOT NULL DEFAULT '',
   active         BOOLEAN NOT NULL DEFAULT true,
   start_month    DATE NOT NULL DEFAULT date_trunc('month', CURRENT_DATE),
@@ -122,6 +125,8 @@ END $$;
 -- Spese fisse: cadenza mensile/annuale, come le voci previste.
 ALTER TABLE recurring_rules ADD COLUMN IF NOT EXISTS cadence TEXT NOT NULL DEFAULT 'monthly';
 ALTER TABLE recurring_rules ADD COLUMN IF NOT EXISTS month INT;
+-- Spese fisse a durata limitata (es. finanziamento a 12 rate).
+ALTER TABLE recurring_rules ADD COLUMN IF NOT EXISTS total_occurrences INT;
 DO $$
 BEGIN
   IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'recurring_rules_cadence_check') THEN
@@ -129,6 +134,10 @@ BEGIN
   END IF;
   IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'recurring_rules_month_check') THEN
     ALTER TABLE recurring_rules ADD CONSTRAINT recurring_rules_month_check CHECK (month BETWEEN 1 AND 12);
+  END IF;
+  IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'recurring_rules_total_occ_check') THEN
+    ALTER TABLE recurring_rules ADD CONSTRAINT recurring_rules_total_occ_check
+      CHECK (total_occurrences IS NULL OR total_occurrences BETWEEN 1 AND 600);
   END IF;
 END $$;
 

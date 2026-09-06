@@ -29,6 +29,7 @@ module.exports = [
       'cadence',
       'month',
       'day_of_month',
+      'total_occurrences',
       'note',
       'active',
       'start_month',
