@@ -1856,6 +1856,13 @@ async function openTxModal(tx = null, onChange) {
           </label>
         </div>
       </div>
+      <div class="field">
+        <label for="note">Descrizione</label>
+        <input id="note" name="note" maxlength="280" autocomplete="off" list="tx-note-list"
+               value="${escapeHtml(t.note || '')}" placeholder="Es. Spesa Esselunga, Stipendio" />
+        <datalist id="tx-note-list"></datalist>
+        <div class="suggest-line" id="tx-suggest" hidden></div>
+      </div>
       <div class="row-2">
         <div class="field">
           <label for="amount">Importo (€)</label>
@@ -1879,13 +1886,6 @@ async function openTxModal(tx = null, onChange) {
             )
             .join('')}
         </select>
-      </div>
-      <div class="field">
-        <label for="note">Nota</label>
-        <input id="note" name="note" maxlength="280" autocomplete="off" list="tx-note-list"
-               value="${escapeHtml(t.note || '')}" placeholder="Facoltativa" />
-        <datalist id="tx-note-list"></datalist>
-        <div class="suggest-line" id="tx-suggest" hidden></div>
       </div>
       <span class="error" id="tx-err"></span>
       <div class="modal-actions">
