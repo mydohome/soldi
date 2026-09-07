@@ -28,14 +28,4 @@ export const icons = {
   refresh: wrap('<polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/>'),
 };
 
-export const logoMark = `
-<svg viewBox="0 0 40 40" aria-hidden="true">
-  <defs>
-    <linearGradient id="lg" x1="0" y1="0" x2="1" y2="1">
-      <stop offset="0" stop-color="#6c8cff"/><stop offset="1" stop-color="#12b886"/>
-    </linearGradient>
-  </defs>
-  <rect width="40" height="40" rx="11" fill="url(#lg)"/>
-  <path d="M8 26c4 0 4-6 8-6s4 8 8 8 4-12 10-12" fill="none" stroke="#fff" stroke-width="3.4" stroke-linecap="round"/>
-  <circle cx="28" cy="14" r="3.4" fill="#fff"/>
-</svg>`;
+export const logoMark = `<img class="logo-mark" src="/favicon.png" alt="" width="40" height="40" />`;
