@@ -29,13 +29,13 @@ export const icons = {
 };
 
 export const logoMark = `
-<svg viewBox="0 0 40 40" aria-hidden="true">
+<svg viewBox="0 0 64 64" aria-hidden="true">
   <defs>
     <linearGradient id="lg" x1="0" y1="0" x2="1" y2="1">
-      <stop offset="0" stop-color="#6c8cff"/><stop offset="1" stop-color="#12b886"/>
+      <stop offset="0" stop-color="#ffd24a"/><stop offset="1" stop-color="#ff6a1f"/>
     </linearGradient>
   </defs>
-  <rect width="40" height="40" rx="11" fill="url(#lg)"/>
-  <path d="M8 26c4 0 4-6 8-6s4 8 8 8 4-12 10-12" fill="none" stroke="#fff" stroke-width="3.4" stroke-linecap="round"/>
-  <circle cx="28" cy="14" r="3.4" fill="#fff"/>
+  <rect width="64" height="64" rx="15" fill="#17171a"/>
+  <path d="M17 50 V28 H9 L21 12 L33 28 H25 V50 Z" fill="url(#lg)"/>
+  <path d="M39 14 V36 H31 L43 52 L55 36 H47 V14 Z" fill="url(#lg)"/>
 </svg>`;
