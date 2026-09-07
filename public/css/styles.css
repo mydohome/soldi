@@ -112,7 +112,8 @@ button { cursor: pointer; }
   font-size: 1.15rem;
   letter-spacing: -0.02em;
 }
-.brand svg { width: 30px; height: 30px; flex: none; }
+.brand svg, .brand .logo-mark { width: 30px; height: 30px; flex: none; }
+.brand .logo-mark { border-radius: 8px; }
 
 .nav-link {
   display: flex;
