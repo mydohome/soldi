@@ -122,6 +122,17 @@ function h(html) {
   return t.content.firstElementChild;
 }
 
+async function doLogout() {
+  try {
+    await api.logout();
+  } catch {
+    /* clear the client session anyway */
+  }
+  state.user = null;
+  location.hash = '';
+  renderAuth();
+}
+
 /* ------------------------------------------------------------------ boot */
 async function boot() {
   try {
@@ -259,12 +270,7 @@ function renderShell() {
   `);
   root.appendChild(shell);
 
-  shell.querySelector('#logout').addEventListener('click', async () => {
-    await api.logout();
-    state.user = null;
-    location.hash = '';
-    renderAuth();
-  });
+  shell.querySelector('#logout').addEventListener('click', doLogout);
   shell.querySelectorAll('.tabbar button').forEach((b) =>
     b.addEventListener('click', () => (location.hash = `#/${b.dataset.view}`))
   );
@@ -1814,9 +1820,17 @@ docker compose run --rm web npm run restore -- --latest --yes
 docker compose run --rm web npm run restore -- /app/backups/NOME_BACKUP --yes</code>
         <p class="muted" style="font-size:.85rem">La procedura completa è nel README, sezione «Ripristino di emergenza».</p>
       </div>
+
+      <h2 class="section-title">Account</h2>
+      <div class="card card-pad">
+        <div class="kv"><span>${escapeHtml(state.user?.email || '')}</span></div>
+        <button class="btn danger" id="imp-logout" style="margin-top:12px">${icons.logout}<span>Esci</span></button>
+      </div>
     </div>
   `)
   );
+
+  main.querySelector('#imp-logout').addEventListener('click', doLogout);
 
   main.querySelector('#mk-backup').addEventListener('click', async (e) => {
     e.target.disabled = true;
