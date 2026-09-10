@@ -286,6 +286,20 @@ button { cursor: pointer; }
 }
 .stat.income { background: linear-gradient(160deg, color-mix(in srgb, var(--income) 12%, var(--bg-elev)), var(--bg-elev) 70%); border-color: color-mix(in srgb, var(--income) 22%, var(--line)); }
 .stat.expense { background: linear-gradient(160deg, color-mix(in srgb, var(--expense) 12%, var(--bg-elev)), var(--bg-elev) 70%); border-color: color-mix(in srgb, var(--expense) 22%, var(--line)); }
+.stat.drill { cursor: pointer; transition: transform 0.12s, box-shadow 0.12s; }
+.stat.drill:hover { transform: translateY(-2px); box-shadow: var(--shadow); }
+.stat.drill:focus-visible { outline: 2px solid var(--brand); outline-offset: 2px; }
+.stat.drill::after {
+  content: "";
+  position: absolute;
+  right: 14px;
+  top: 16px;
+  width: 7px;
+  height: 7px;
+  border-top: 2px solid var(--ink-faint);
+  border-right: 2px solid var(--ink-faint);
+  transform: rotate(45deg);
+}
 .stat-head { display: flex; align-items: center; gap: 8px; }
 .stat-ico { width: 26px; height: 26px; border-radius: 8px; display: grid; place-content: center; flex: none; color: #fff; }
 .stat-ico svg { width: 15px; height: 15px; }

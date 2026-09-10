@@ -358,14 +358,14 @@ async function viewDashboard(main) {
         </div>
       </div>
 
-      <div class="grid cols-2" style="margin-top:16px">
-        <div class="card stat income">
+      <div class="grid cols-2" style="margin-top:16px" id="kpi-grid">
+        <div class="card stat income drill" data-drill="income" role="button" tabindex="0">
           <div class="stat-head"><span class="stat-ico">${icons.arrowUp}</span><span class="label">Entrate</span></div>
           <span class="value">${fmtEur(block.income)}</span>
           ${statSplit(block, 'income')}
           <div class="spark">${spark(trend.map((t) => t.income), { color: 'var(--income)' })}</div>
         </div>
-        <div class="card stat expense">
+        <div class="card stat expense drill" data-drill="expense" role="button" tabindex="0">
           <div class="stat-head"><span class="stat-ico">${icons.arrowDown}</span><span class="label">Uscite</span></div>
           <span class="value">${fmtEur(block.expense)}</span>
           ${statSplit(block, 'expense')}
@@ -449,6 +449,19 @@ async function viewDashboard(main) {
     state.period = b.dataset.p;
     viewDashboard(main);
   });
+
+  main.querySelector('#kpi-grid').addEventListener('click', (e) => {
+    const card = e.target.closest('[data-drill]');
+    if (card) openPeriodTxModal(card.dataset.drill, () => viewDashboard(main));
+  });
+  main.querySelector('#kpi-grid').addEventListener('keydown', (e) => {
+    if (e.key !== 'Enter' && e.key !== ' ') return;
+    const card = e.target.closest('[data-drill]');
+    if (card) {
+      e.preventDefault();
+      openPeriodTxModal(card.dataset.drill, () => viewDashboard(main));
+    }
+  });
   main.querySelector('#prev').addEventListener('click', () => {
     state.anchor = shiftPeriod(state.period, state.anchor, -1);
     viewDashboard(main);
@@ -472,6 +485,58 @@ async function viewDashboard(main) {
       ? emptyState('Nessun movimento in questo periodo.')
       : transactions.map(txRow).join('');
   bindTxRows(recent, () => viewDashboard(main));
+}
+
+/**
+ * Popup: the transactions of one type (Entrate / Uscite) for the dashboard's
+ * current period and scope. Opened by clicking the KPI cards.
+ */
+async function openPeriodTxModal(kind, onClose) {
+  const { from, to } = periodRange(state.period, state.anchor);
+  const qs = new URLSearchParams({ from, to, type: kind, limit: '300' });
+  if (state.scope) qs.set('scope', state.scope);
+
+  const heading = `${kind === 'income' ? 'Entrate' : 'Uscite'} · ${periodLabel(state.period, state.anchor)}`;
+  let changed = false;
+  const { bd, close } = modal(
+    `
+    <h2>${escapeHtml(heading)}</h2>
+    <div id="drill-body"><div class="boot"><div class="boot-mark"></div></div></div>
+    <div class="modal-actions"><button type="button" class="btn ghost" id="drill-close">Chiudi</button></div>
+  `,
+    () => {
+      if (changed) onClose?.();
+    }
+  );
+  bd.querySelector('#drill-close').addEventListener('click', close);
+
+  const body = bd.querySelector('#drill-body');
+  const load = async () => {
+    const { transactions } = await api.transactions(qs.toString());
+    if (transactions.length === 0) {
+      body.innerHTML = emptyState('Nessun movimento in questo periodo.');
+      return;
+    }
+    const total = transactions.reduce((s, t) => s + t.amount, 0);
+    const byDay = groupBy(transactions, (t) => t.occurredOn);
+    body.innerHTML =
+      `<div class="kv" style="margin-bottom:12px"><span>Totale</span><span class="mono" style="font-weight:800;color:var(--${kind === 'income' ? 'income' : 'expense'})">${fmtEur(total)}</span></div>` +
+      Object.entries(byDay)
+        .sort((a, b) => (a[0] < b[0] ? 1 : -1))
+        .map(
+          ([day, items]) => `
+          <div class="tx-day" style="margin-top:12px">
+            <div class="tx-day-head"><span>${escapeHtml(capitalize(dtfDay.format(parseISO(day))))}</span></div>
+            <div class="card">${items.map(txRow).join('')}</div>
+          </div>`
+        )
+        .join('');
+    bindTxRows(body, () => {
+      changed = true;
+      load();
+    });
+  };
+  load();
 }
 
 /* ------------------------------------------------------------------ movimenti */
@@ -1931,18 +1996,23 @@ function bindTxRows(container, onChange) {
 }
 
 /* ------------------------------------------------------------------ modals */
-function modal(inner) {
+function modal(inner, onClose) {
   const bd = h(`<div class="modal-backdrop"><div class="modal" role="dialog" aria-modal="true">${inner}</div></div>`);
-  const close = () => bd.remove();
+  let closed = false;
+  const close = () => {
+    if (closed) return;
+    closed = true;
+    bd.remove();
+    document.removeEventListener('keydown', esc);
+    onClose?.();
+  };
+  function esc(ev) {
+    if (ev.key === 'Escape') close();
+  }
   bd.addEventListener('click', (e) => {
     if (e.target === bd) close();
   });
-  document.addEventListener('keydown', function esc(ev) {
-    if (ev.key === 'Escape') {
-      close();
-      document.removeEventListener('keydown', esc);
-    }
-  });
+  document.addEventListener('keydown', esc);
   document.body.appendChild(bd);
   return { bd, close };
 }
