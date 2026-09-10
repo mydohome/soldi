@@ -460,8 +460,12 @@ async function viewMovimenti(main) {
   state._categories = categories;
   state._accounts = accounts;
   const filters =
-    state._txFilters || { type: '', categoryId: '', accountId: '', scope: '', month: startOfMonth(today()) };
+    state._txFilters ||
+    { q: '', range: startOfMonth(today()), type: '', categoryId: '', accountId: '', scope: '' };
   state._txFilters = filters;
+  const dirty =
+    filters.q || filters.type || filters.categoryId || filters.accountId || filters.scope ||
+    filters.range !== startOfMonth(today());
 
   main.innerHTML = '';
   main.appendChild(
@@ -472,9 +476,14 @@ async function viewMovimenti(main) {
         <button class="btn primary" id="add-tx">${icons.plus}<span>Aggiungi</span></button>
       </div>
       <div class="list-head">
+        <input id="f-q" type="search" placeholder="Cerca nella descrizione o categoria…"
+               value="${escapeHtml(filters.q)}" autocomplete="off" />
         <div class="filters">
-          <select id="f-month">
-            ${monthOptions(filters.month)}
+          <select id="f-range">
+            <option value="all" ${filters.range === 'all' ? 'selected' : ''}>Tutto</option>
+            <option value="3m" ${filters.range === '3m' ? 'selected' : ''}>Ultimi 3 mesi</option>
+            <option value="year" ${filters.range === 'year' ? 'selected' : ''}>Quest'anno</option>
+            <optgroup label="Mese">${monthOptions(filters.range)}</optgroup>
           </select>
           <select id="f-type">
             <option value="">Tutti i tipi</option>
@@ -498,6 +507,7 @@ async function viewMovimenti(main) {
             <option value="personal" ${filters.scope === 'personal' ? 'selected' : ''}>Solo personale</option>
             <option value="home" ${filters.scope === 'home' ? 'selected' : ''}>Solo casa</option>
           </select>
+          <button class="btn ghost" id="f-clear" ${dirty ? '' : 'hidden'}>Pulisci</button>
         </div>
       </div>
       <div id="tx-list"></div>
@@ -507,20 +517,51 @@ async function viewMovimenti(main) {
 
   main.querySelector('#add-tx').addEventListener('click', () => openTxModal(null, () => viewMovimenti(main)));
   const reload = () => loadTxList(main);
-  main.querySelector('#f-month').addEventListener('change', (e) => { filters.month = e.target.value; reload(); });
+  const qInput = main.querySelector('#f-q');
+  let qTimer;
+  qInput.addEventListener('input', () => {
+    clearTimeout(qTimer);
+    qTimer = setTimeout(() => {
+      filters.q = qInput.value.trim();
+      main.querySelector('#f-clear').hidden = false;
+      reload();
+    }, 250);
+  });
+  main.querySelector('#f-range').addEventListener('change', (e) => { filters.range = e.target.value; reload(); });
   main.querySelector('#f-type').addEventListener('change', (e) => { filters.type = e.target.value; reload(); });
   main.querySelector('#f-cat').addEventListener('change', (e) => { filters.categoryId = e.target.value; reload(); });
   main.querySelector('#f-acc').addEventListener('change', (e) => { filters.accountId = e.target.value; reload(); });
   main.querySelector('#f-scope').addEventListener('change', (e) => { filters.scope = e.target.value; reload(); });
+  main.querySelector('#f-clear').addEventListener('click', () => {
+    state._txFilters = null;
+    viewMovimenti(main);
+  });
 
   loadTxList(main);
 }
 
+function txFilterBounds(range) {
+  if (range === 'all') return {};
+  if (range === 'year') {
+    const y = today().slice(0, 4);
+    return { from: `${y}-01-01`, to: `${y}-12-31` };
+  }
+  if (range === '3m') {
+    const d = parseISO(today());
+    const start = toISO(new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth() - 2, 1)));
+    return { from: start, to: endOfMonth(today()) };
+  }
+  // a YYYY-MM-01 month value
+  return { from: startOfMonth(range), to: endOfMonth(range) };
+}
+
 async function loadTxList(main) {
   const f = state._txFilters;
-  const from = f.month;
-  const to = endOfMonth(f.month);
-  const qs = new URLSearchParams({ from, to, limit: '500' });
+  const { from, to } = txFilterBounds(f.range);
+  const qs = new URLSearchParams({ limit: '500' });
+  if (from) qs.set('from', from);
+  if (to) qs.set('to', to);
+  if (f.q) qs.set('q', f.q);
   if (f.type) qs.set('type', f.type);
   if (f.categoryId) qs.set('categoryId', f.categoryId);
   if (f.accountId) qs.set('accountId', f.accountId);
@@ -531,9 +572,12 @@ async function loadTxList(main) {
   const { transactions } = await api.transactions(qs.toString());
 
   if (transactions.length === 0) {
-    list.innerHTML = emptyState('Nessun movimento con questi filtri.');
+    list.innerHTML = emptyState(
+      f.q ? `Nessun movimento per «${escapeHtml(f.q)}».` : 'Nessun movimento con questi filtri.'
+    );
     return;
   }
+  const capped = transactions.length === 500;
 
   const totals = transactions.reduce(
     (a, t) => {
@@ -562,7 +606,10 @@ async function loadTxList(main) {
           <div class="card">${items.map(txRow).join('')}</div>
         </div>`
       )
-      .join('');
+      .join('') +
+    (capped
+      ? '<p class="muted" style="font-size:.85rem;text-align:center;margin-top:14px">Mostrati i primi 500 — restringi i filtri o l\'intervallo per vederne altri.</p>'
+      : '');
 
   bindTxRows(list, () => loadTxList(main));
 }

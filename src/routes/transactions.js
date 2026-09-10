@@ -66,9 +66,13 @@ const listQuery = z.object({
   categoryId: z.coerce.number().int().positive().optional(),
   accountId: z.coerce.number().int().positive().optional(),
   scope: z.enum(['personal', 'home']).optional(),
+  q: z.string().trim().max(100).optional(),
   limit: z.coerce.number().int().min(1).max(500).default(100),
   offset: z.coerce.number().int().min(0).default(0),
 });
+
+// Escape LIKE wildcards so a user's "%" or "_" is matched literally.
+const likeContains = (s) => `%${s.replace(/[\\%_]/g, '\\$&')}%`;
 
 router.get(
   '/',
@@ -86,6 +90,11 @@ router.get(
     if (q.categoryId) add('t.category_id = ?', q.categoryId);
     if (q.accountId) add('t.account_id = ?', q.accountId);
     if (q.scope) add('t.scope = ?', q.scope);
+    if (q.q) {
+      params.push(likeContains(q.q));
+      const p = `$${params.length}`;
+      where.push(`(t.note ILIKE ${p} ESCAPE '\\' OR c.name ILIKE ${p} ESCAPE '\\')`);
+    }
 
     params.push(q.limit, q.offset);
     const rows = await query(

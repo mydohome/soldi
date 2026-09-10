@@ -786,13 +786,19 @@ code.block {
 
 .list-head {
   display: flex;
-  justify-content: space-between;
-  align-items: center;
-  gap: 12px;
-  flex-wrap: wrap;
+  flex-direction: column;
+  gap: 10px;
   margin-bottom: 14px;
 }
-.filters { display: flex; gap: 8px; flex-wrap: wrap; }
+.list-head #f-q {
+  width: 100%;
+  padding: 10px 13px;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--line);
+  background: var(--bg-elev);
+  font-size: 16px;
+}
+.filters { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
 .filters select {
   padding: 8px 11px;
   border-radius: var(--radius-sm);
@@ -800,6 +806,7 @@ code.block {
   background: var(--bg-elev);
   font-size: 16px;
 }
+.filters .btn { padding: 8px 12px; }
 
 .cat-row {
   display: flex;
