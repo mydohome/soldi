@@ -783,6 +783,18 @@ code.block {
 }
 .toast.show { opacity: 1; transform: translate(-50%, 0); }
 .toast.error { background: var(--expense); color: #fff; }
+.toast-action {
+  pointer-events: auto;
+  margin-left: 14px;
+  padding: 0;
+  background: none;
+  border: none;
+  color: inherit;
+  font: inherit;
+  font-weight: 800;
+  text-decoration: underline;
+  cursor: pointer;
+}
 
 .list-head {
   display: flex;

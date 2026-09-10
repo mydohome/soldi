@@ -88,12 +88,32 @@ function shiftPeriod(period, anchor, dir) {
 }
 const capitalize = (s) => s.charAt(0).toUpperCase() + s.slice(1);
 
-function toast(msg, kind = 'ok') {
+/**
+ * @param {string} msg
+ * @param {string|{kind?:string, action?:{label:string, onClick:Function}, duration?:number}} [opts]
+ *   a bare string is treated as `kind` (back-compat: 'error').
+ */
+function toast(msg, opts = {}) {
+  if (typeof opts === 'string') opts = { kind: opts };
   const el = document.getElementById('toast');
+  const hide = () => {
+    el.className = 'toast';
+  };
   el.textContent = msg;
-  el.className = `toast show ${kind === 'error' ? 'error' : ''}`;
+  if (opts.action) {
+    const btn = document.createElement('button');
+    btn.className = 'toast-action';
+    btn.textContent = opts.action.label;
+    btn.addEventListener('click', () => {
+      clearTimeout(toast._t);
+      hide();
+      opts.action.onClick();
+    });
+    el.appendChild(btn);
+  }
+  el.className = `toast show ${opts.kind === 'error' ? 'error' : ''}`;
   clearTimeout(toast._t);
-  toast._t = setTimeout(() => (el.className = 'toast'), 3000);
+  toast._t = setTimeout(hide, opts.duration || (opts.action ? 6000 : 3000));
 }
 
 function h(html) {
@@ -1880,16 +1900,32 @@ function bindTxRows(container, onChange) {
     })
   );
   container.querySelectorAll('.tx-del').forEach((b) =>
-    b.addEventListener('click', async () => {
-      const id = b.closest('.tx').dataset.id;
-      if (!confirm('Eliminare questo movimento?')) return;
-      try {
-        await api.del(`/api/transactions/${id}`);
-        toast('Movimento eliminato');
-        onChange();
-      } catch (e) {
-        toast(e.message, 'error');
-      }
+    b.addEventListener('click', () => {
+      const row = b.closest('.tx');
+      const id = row.dataset.id;
+      row.hidden = true; // hide now; actually delete after the undo window
+      const timer = setTimeout(async () => {
+        try {
+          await api.del(`/api/transactions/${id}`);
+          try {
+            onChange();
+          } catch {
+            /* the view changed in the meantime — the delete still went through */
+          }
+        } catch (e) {
+          row.hidden = false;
+          toast(e.message, 'error');
+        }
+      }, 5000);
+      toast('Movimento eliminato', {
+        action: {
+          label: 'Annulla',
+          onClick: () => {
+            clearTimeout(timer);
+            row.hidden = false;
+          },
+        },
+      });
     })
   );
 }
@@ -2103,12 +2139,19 @@ async function openTxModal(tx = null, onChange) {
   askSug();
 
   form.querySelector('#tx-cancel').addEventListener('click', close);
-  form.querySelector('#tx-delete')?.addEventListener('click', async () => {
-    if (!confirm('Eliminare questo movimento?')) return;
-    await api.del(`/api/transactions/${tx.id}`);
+  form.querySelector('#tx-delete')?.addEventListener('click', () => {
     close();
-    toast('Movimento eliminato');
-    onChange?.();
+    const timer = setTimeout(async () => {
+      try {
+        await api.del(`/api/transactions/${tx.id}`);
+        onChange?.();
+      } catch (e) {
+        toast(e.message, 'error');
+      }
+    }, 5000);
+    toast('Movimento eliminato', {
+      action: { label: 'Annulla', onClick: () => clearTimeout(timer) },
+    });
   });
 
   form.addEventListener('submit', async (e) => {
