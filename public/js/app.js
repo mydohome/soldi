@@ -356,7 +356,7 @@ async function viewDashboard(main) {
       <div class="grid cols-2" style="margin-top:16px">
         <div class="card card-pad chart-card">
           <h3>Spese per categoria</h3>
-          <p class="hint">Mese di ${escapeHtml(capitalize(dtfMonth.format(parseISO(state.anchor))))}</p>
+          <p class="hint">Mese di ${escapeHtml(capitalize(dtfMonth.format(parseISO(state.anchor))))} · ▲▼ vs media 3 mesi</p>
           <div class="donut-wrap">
             ${donut(data.expenseByCategory)}
             <div class="legend">
@@ -368,7 +368,7 @@ async function viewDashboard(main) {
                         (c) =>
                           `<div class="row"><span class="dot" style="background:${c.color}"></span>${escapeHtml(
                             c.name
-                          )}<span class="amt">${fmtEur(c.total)}</span></div>`
+                          )}${categoryDelta(c)}<span class="amt">${fmtEur(c.total)}</span></div>`
                       )
                       .join('')
                   : '<span class="muted">Aggiungi una spesa per vedere la ripartizione.</span>'
@@ -1768,6 +1768,17 @@ function scopeBadge(scope) {
   const s = SCOPES[scope];
   if (!s) return '';
   return `<span class="scope-badge ${scope}">${s.icon()}${s.short}</span>`;
+}
+
+// "vs media 3 mesi" chip for a category in the dashboard donut legend.
+// Spending more than usual = red (up), less = green (down).
+function categoryDelta(c) {
+  if (c.prevAvg == null || c.prevAvg < 0.5) return '';
+  const raw = Math.round(((c.total - c.prevAvg) / c.prevAvg) * 100);
+  const title = ` title="vs media 3 mesi (${escapeHtml(fmtEur(c.prevAvg))}/mese)"`;
+  if (Math.abs(raw) < 3) return `<span class="cdelta flat"${title}>≈</span>`;
+  const pct = Math.min(Math.abs(raw), 999);
+  return `<span class="cdelta ${raw > 0 ? 'up' : 'down'}"${title}>${raw > 0 ? '▲' : '▼'} ${pct}%</span>`;
 }
 
 // Sub-line on a dashboard KPI card: "Pers. X · Casa Y" (only when not filtered).

@@ -82,6 +82,29 @@ async function byCategory(userId, from, to, type, scope) {
   }));
 }
 
+/**
+ * Average monthly expense per category over the N full months before `monthFrom`
+ * (the first day of the anchor month). Used to show a "vs media" delta.
+ * Returns Map(categoryId|null -> euros/month).
+ */
+async function prevMonthsAvgByCategory(userId, monthFrom, months, scope) {
+  const sf = scopeFilter(scope, 4);
+  const params = [userId, monthFrom, months];
+  if (sf.value) params.push(sf.value);
+  const r = await query(
+    `SELECT t.category_id, SUM(t.amount_cents) AS total
+     FROM transactions t
+     WHERE t.user_id = $1 AND t.type = 'expense'
+       AND t.occurred_on >= ($2::date - make_interval(months => $3::int))
+       AND t.occurred_on <  $2::date${sf.clause}
+     GROUP BY t.category_id`,
+    params
+  );
+  const map = new Map();
+  for (const row of r.rows) map.set(row.category_id, euros(row.total) / months);
+  return map;
+}
+
 async function byAccount(userId, from, to, type, scope) {
   const sf = scopeFilter(scope, 5);
   const params = [userId, from, to, type];
@@ -157,12 +180,20 @@ router.get(
       totals(req.user.id, d(win.month_from), d(win.month_to), scope),
     ]);
 
-    const [expenseByCategory, incomeByCategory, expenseByAccount, split] = await Promise.all([
-      byCategory(req.user.id, month.from, month.to, 'expense', scope),
-      byCategory(req.user.id, month.from, month.to, 'income', scope),
-      byAccount(req.user.id, month.from, month.to, 'expense', scope),
-      scopeSplit(req.user.id, month.from, month.to),
-    ]);
+    const [expenseByCategory, incomeByCategory, expenseByAccount, split, prevAvgMap] =
+      await Promise.all([
+        byCategory(req.user.id, month.from, month.to, 'expense', scope),
+        byCategory(req.user.id, month.from, month.to, 'income', scope),
+        byAccount(req.user.id, month.from, month.to, 'expense', scope),
+        scopeSplit(req.user.id, month.from, month.to),
+        prevMonthsAvgByCategory(req.user.id, month.from, 3, scope),
+      ]);
+
+    // Attach the 3-month average so the dashboard can show a "vs media" delta.
+    for (const c of expenseByCategory) {
+      const avg = prevAvgMap.get(c.categoryId);
+      c.prevAvg = avg != null ? Number(avg.toFixed(2)) : null;
+    }
 
     const trendParams = [req.user.id, a];
     let scopeClause = '';

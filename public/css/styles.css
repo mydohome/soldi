@@ -503,6 +503,10 @@ button { cursor: pointer; }
 .legend .row { display: flex; align-items: center; gap: 10px; font-size: 0.88rem; }
 .legend .dot { width: 10px; height: 10px; border-radius: 3px; flex: none; }
 .legend .amt { margin-left: auto; color: var(--ink-soft); font-variant-numeric: tabular-nums; }
+.legend .cdelta { font-size: 0.72rem; font-weight: 700; white-space: nowrap; }
+.legend .cdelta.up { color: var(--expense); }
+.legend .cdelta.down { color: var(--income); }
+.legend .cdelta.flat { color: var(--ink-faint); }
 
 .bars { display: block; width: 100%; max-width: 100%; height: auto; overflow: hidden; }
 
