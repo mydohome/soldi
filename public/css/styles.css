@@ -270,10 +270,15 @@ button { cursor: pointer; }
   border-radius: 999px;
   font-size: 0.86rem;
   font-weight: 650;
+  white-space: nowrap;
   background: rgba(255, 255, 255, 0.18);
   backdrop-filter: blur(4px);
 }
-.hero-chip svg { width: 14px; height: 14px; }
+.hero-chip svg { width: 14px; height: 14px; flex: none; }
+@media (max-width: 560px) {
+  .hero-chips { flex-wrap: nowrap; gap: 8px; }
+  .hero-chip { flex: 1 1 0; min-width: 0; justify-content: center; padding: 7px 9px; font-size: 0.76rem; }
+}
 
 /* ---------- Stat cards ---------- */
 .stat {
@@ -286,8 +291,13 @@ button { cursor: pointer; }
 }
 .stat.income { background: linear-gradient(160deg, color-mix(in srgb, var(--income) 12%, var(--bg-elev)), var(--bg-elev) 70%); border-color: color-mix(in srgb, var(--income) 22%, var(--line)); }
 .stat.expense { background: linear-gradient(160deg, color-mix(in srgb, var(--expense) 12%, var(--bg-elev)), var(--bg-elev) 70%); border-color: color-mix(in srgb, var(--expense) 22%, var(--line)); }
-.stat.drill { cursor: pointer; transition: transform 0.12s, box-shadow 0.12s; }
-.stat.drill:hover { transform: translateY(-2px); box-shadow: var(--shadow); }
+.stat.drill { cursor: pointer; transition: transform 0.12s, box-shadow 0.12s; -webkit-tap-highlight-color: transparent; }
+/* hover only on devices that really hover — on touch the first tap would just
+   trigger :hover instead of the click. */
+@media (hover: hover) {
+  .stat.drill:hover { transform: translateY(-2px); box-shadow: var(--shadow); }
+}
+.stat.drill:active { transform: translateY(-1px); }
 .stat.drill:focus-visible { outline: 2px solid var(--brand); outline-offset: 2px; }
 .stat.drill::after {
   content: "";
