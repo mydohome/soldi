@@ -82,10 +82,25 @@ app.use('/api', (req, res) => res.status(404).json({ error: 'not_found' }));
 
 // Static SPA
 const publicDir = path.join(__dirname, '..', 'public');
-// No build/hash step on assets, so revalidate every load (fast 304s via ETag)
-// rather than risk serving a stale bundle after an update.
-app.use(express.static(publicDir, { maxAge: 0, etag: true, index: false }));
-app.get('*', (req, res) => res.sendFile(path.join(publicDir, 'index.html')));
+// No build/hash step on the code, and an installed PWA (iOS) is happy to keep
+// serving a cached app.js/styles.css forever. Force the browser to re-fetch the
+// code on every load; let images cache normally.
+app.use(
+  express.static(publicDir, {
+    index: false,
+    etag: true,
+    setHeaders: (res, filePath) => {
+      res.setHeader(
+        'Cache-Control',
+        /\.(html|js|css)$/.test(filePath) ? 'no-store' : 'public, max-age=86400'
+      );
+    },
+  })
+);
+app.get('*', (req, res) => {
+  res.setHeader('Cache-Control', 'no-store');
+  res.sendFile(path.join(publicDir, 'index.html'));
+});
 
 async function start() {
   await migrate();
