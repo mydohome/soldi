@@ -34,15 +34,17 @@ Funziona da smartphone e da desktop (interfaccia responsive), gira interamente c
 | | |
 |---|---|
 | 👤 **Account** | Registrazione con email + password (hash `bcrypt`), sessione via cookie firmato `httpOnly`. Rate limiting sui tentativi di login. |
-| 💰 **Movimenti** | Entrate e uscite con importo, data, nota, categoria, **conto** e **ambito** (personale / casa). Modifica ed eliminazione. |
+| 💰 **Movimenti** | Entrate e uscite con importo, data, descrizione, categoria, **conto** e **ambito** (personale / casa). Ricerca testo, filtri, **annulla** dopo l'eliminazione. |
+| ✨ **Suggerimenti** | Inserendo un movimento l'app propone descrizione, categoria e conto in base allo storico (nessun servizio esterno). |
 | 🏷️ **Categorie** | Personalizzabili per colore, tipo (spesa/entrata) e **ambito (Personale/Casa)** — separate nella schermata Categorie e nei filtri dei form. 11 categorie predefinite alla registrazione. |
 | 🏦 **Conti** | Contanti, conto corrente, carta… da associare ai movimenti come le categorie. 3 conti predefiniti alla registrazione. |
 | 🏠 **Personale / Casa** | Ogni movimento ha un ambito; la dashboard mostra Personale, Casa e Totale affiancati, e c'è un filtro dedicato. |
-| 🔁 **Spese fisse** | Regole ricorrenti (mutuo, finanziamento, addebiti, stipendio…), **mensili o una volta l'anno**, che generano un movimento vero finché sono attive. Recupero automatico dopo downtime. |
-| 🎯 **Previsioni** | Voci di budget mensili/annuali → previsione delle spese dell'anno, proiezione a fine anno, **budget mensile necessario** e **risparmio potenziale**, confronto con lo speso reale per categoria e ambito. Non tocca i grafici della Dashboard. |
+| 🔁 **Spese fisse** | Regole ricorrenti (mutuo, finanziamento, addebiti, stipendio…), **mensili o una volta l'anno**, con **durata opzionale** (es. finanziamento a 12 rate → poi si disattiva). Generano un movimento vero finché sono attive. Recupero automatico dopo downtime. |
+| 🎯 **Previsioni** | Voci di budget mensili/annuali → previsione delle spese dell'anno, proiezione a fine anno, **budget mensile necessario** e **risparmio potenziale**. Non tocca i grafici della Dashboard. |
+| 🐖 **Risparmio** | In base ai mesi passati stima quanto puoi destinare, in percentuale sulle entrate, a un **fondo sicurezza** e a un **fondo risparmio**. |
 | 📱 **Installabile** | PWA: da iPhone/Android *Aggiungi a Home* e si apre a tutto schermo con icona propria. |
-| 📊 **Riepiloghi** | Totali entrate / uscite / saldo per **giorno**, **settimana** (lun–dom) e **mese**, con navigazione avanti/indietro. |
-| 📈 **Grafici** | Donut per categoria e barre entrate/uscite (SVG originali, nessuna libreria esterna). |
+| 📊 **Riepiloghi** | Totali entrate / uscite / saldo per **giorno**, **settimana** (lun–dom) e **mese**, con navigazione avanti/indietro. Tocca un box per l'elenco dei movimenti di quel periodo. |
+| 📈 **Grafici** | Donut per categoria (con confronto ▲▼ rispetto alla media di 3 mesi) e barre entrate/uscite. SVG originali, nessuna libreria esterna. |
 | 🗄️ **Backup** | CSV automatico ogni settimana + backup manuale on‑demand (in **Impostazioni**). |
 | ⬆️ **Aggiornamento dall'app** | In **Impostazioni**: controlla e installa l'ultima versione da git (`SELF_UPDATE_ENABLED=true`). |
 | ♻️ **Ripristino** | Comando singolo che ricarica i dati da un backup CSV. |
@@ -130,9 +132,11 @@ Lo schema del database viene applicato automaticamente a ogni avvio (idempotente
 Non serve `docker compose down -v` (cancellerebbe i dati).
 
 **Aggiornare dall'app:** metti `SELF_UPDATE_ENABLED=true` nel `.env` e riavvia una volta.
-Poi da **Impostazioni → Aggiorna** l'app fa `git pull` + riavvio da sola (le modifiche al
-`Dockerfile` restano da fare con `./scripts/update.sh`). Il repo sul server dev'essere
-di proprietà dell'utente con UID 1000 (di solito il primo utente); altrimenti usa lo script.
+Poi da **Impostazioni → Aggiorna** l'app fa `git pull` + riavvio da sola. Vanno bene le
+modifiche a codice e schema DB; le modifiche a `Dockerfile`, dipendenze o
+`docker-compose.yml` richiedono comunque `./scripts/update.sh`. Il processo nel container
+deve poter scrivere nel checkout git montato in `/repo` (vedi lo scenario B della sezione
+reverse proxy per `PUID`/`PGID`).
 
 **HTTP diretto** (`http://IP_SERVER:3010`): lascia `HTTPS_ENABLED=false` (default).
 
@@ -153,33 +157,42 @@ Docker li riavvia da solo se il server si riavvia (basta che il servizio `docker
 
 ## Dietro un reverse proxy (Nginx Proxy Manager)
 
-Due modi, a seconda di dove sta il proxy.
+Il proxy termina il TLS e inoltra ad app in HTTP. In tutti e tre i casi, nel `.env`:
 
-### Il proxy è sullo stesso host
+```
+HTTPS_ENABLED=true     # il proxy serve l'app in HTTPS → HSTS + cookie Secure
+COOKIE_SECURE=true
+TRUST_PROXY=1          # 1 = un solo proxy davanti (client IP e cookie Secure corretti)
+```
 
-Tieni `docker-compose.yml`, ma pubblica la porta solo in locale e lascia che sia
-il proxy a esporla. Nel `.env`:
+In NPM (*Proxy Hosts → Add*): *Websockets Support* ON, *Block Common Exploits* ON,
+scheda **SSL** con certificato + *Force SSL* + *HTTP/2*. Cambia solo **Forward
+Hostname/Port** a seconda dello scenario.
+
+### A. Proxy sullo stesso host di Soldi
+
+Usa `docker-compose.yml`. Pubblica la porta **solo in locale** così l'app è
+raggiungibile unicamente dal proxy. Nel `.env`:
 
 ```
 BIND_ADDR=127.0.0.1
 HOST_PORT=3010
-HTTPS_ENABLED=true      # il proxy termina il TLS
-COOKIE_SECURE=true
-TRUST_PROXY=1
 ```
 
-Nel proxy: inoltra a `http://127.0.0.1:3010`.
+In NPM: **Forward Hostname** `127.0.0.1`, **Forward Port** `3010`.
 
-### Il proxy è su una rete Docker (nessuna porta pubblicata)
+### B. Proxy sullo stesso host, su rete Docker, nessuna porta pubblicata *(più isolato)*
 
-Usa `docker-compose.npm.yml`: il container applicativo sta sulla rete del proxy
-e non pubblica **nessuna** porta; il database resta su una rete `internal`,
-irraggiungibile dal proxy e da Internet.
+Usa `docker-compose.npm.yml`: `soldi-web` sta sulla rete del proxy, **non pubblica
+alcuna porta**, e il database resta su una rete `internal` irraggiungibile da
+proxy e Internet.
 
 ```bash
 # la rete del proxy dev'essere già esistente ed "external"
 docker network ls | grep -i npm            # es. "npm_default"
-# se serve, adegua il nome in docker-compose.npm.yml (networks: proxy-net: name:)
+# se il nome è diverso da "proxy-net", scommenta e adegua "name:" in
+# docker-compose.npm.yml (networks → proxy-net), oppure crea la rete:
+#   docker network create proxy-net
 
 cp .env.example .env
 sed -i "s/^JWT_SECRET=.*/JWT_SECRET=$(openssl rand -hex 32)/" .env
@@ -190,24 +203,48 @@ sed -i "s/^COOKIE_SECURE=.*/COOKIE_SECURE=true/" .env
 docker compose -f docker-compose.npm.yml up -d --build
 ```
 
-Nel proxy (NPM → *Proxy Hosts → Add*): **Forward Hostname** `soldi-web`,
-**Forward Port** `3000`, *Websockets Support* ON, *Block Common Exploits* ON,
-scheda SSL con *Force SSL*.
+In NPM: **Forward Hostname** `soldi-web`, **Forward Port** `3000`.
 
-Per gli aggiornamenti da riga di comando, indica il file compose:
+Per gli aggiornamenti da riga di comando indica il file compose:
 
 ```bash
 COMPOSE_FILE=docker-compose.npm.yml ./scripts/update.sh
 ```
 
-L'**aggiornamento dall'app** (Impostazioni → Aggiorna) richiede che il processo
-possa scrivere in `/repo`: in `docker-compose.npm.yml` il container gira come
-`${PUID}:${PGID}`. Ricava gli id sull'host e mettili nel `.env`:
+L'**aggiornamento dall'app** richiede che il processo possa scrivere in `/repo`:
+in `docker-compose.npm.yml` il container gira come `${PUID}:${PGID}`. Ricava gli
+id sull'host e mettili nel `.env`:
 
 ```bash
-echo "PUID=$(id -u)"                          >> .env
-echo "PGID=$(getent group docker | cut -d: -f3)" >> .env
+echo "PUID=$(id -u)"                              >> .env
+echo "PGID=$(getent group docker | cut -d: -f3)"  >> .env
 ```
+
+### C. Proxy su un altro host della rete (es. NPM su una macchina dedicata)
+
+NPM su un'altra macchina **non** può raggiungere la rete Docker di Soldi: l'app
+deve pubblicare la porta sulla LAN e NPM la inoltra all'IP del server.
+
+Usa `docker-compose.yml`. Nel `.env` del server Soldi:
+
+```
+BIND_ADDR=0.0.0.0        # raggiungibile dalla LAN (non 127.0.0.1)
+HOST_PORT=3010
+```
+
+Chiudi la porta a tutti tranne l'host di NPM:
+
+```bash
+sudo ufw allow from <IP_HOST_NPM> to any port 3010 proto tcp
+sudo ufw deny 3010/tcp
+```
+
+In NPM: **Forward Hostname** `<IP_DEL_SERVER_SOLDI>`, **Forward Port** `3010`,
+*Scheme* `http`. Il TLS (Let's Encrypt) lo gestisce NPM sul suo host.
+
+> In tutti i casi l'app resta **HTTP tra proxy e Soldi**: è il proxy a parlare
+> HTTPS col browser. `HTTPS_ENABLED=true` serve solo a dire all'app che il client
+> è su HTTPS (per HSTS e cookie `Secure`) — non fa ascoltare l'app in TLS.
 
 ---
 
@@ -229,7 +266,8 @@ echo "PGID=$(getent group docker | cut -d: -f3)" >> .env
 | `BACKUP_KEEP` | `8` | Quanti backup conservare prima di eliminare i più vecchi. |
 | `RECURRING_ENABLED` | `true` | Abilita la generazione automatica delle spese fisse. |
 | `RECURRING_CRON` | `5 6 * * *` | Quando controllare le spese fisse dovute (+ sempre all'avvio). |
-| `SELF_UPDATE_ENABLED` | `false` | `true` = il pulsante **Aggiorna** in Impostazioni fa `git pull` + riavvio del container (senza rebuild). Le modifiche al `Dockerfile` richiedono comunque `./scripts/update.sh`. |
+| `SELF_UPDATE_ENABLED` | `false` | `true` = il pulsante **Aggiorna** in Impostazioni fa `git pull` + riavvio del container (senza rebuild). Le modifiche a `Dockerfile`, dipendenze o `docker-compose.yml` richiedono comunque `./scripts/update.sh`. |
+| `PUID` / `PGID` | `1000` | Solo `docker-compose.npm.yml`: uid/gid con cui gira il container, così l'aggiornamento dall'app può scrivere nel checkout git. Vedi lo scenario B della sezione reverse proxy. |
 
 ---
 
@@ -237,25 +275,36 @@ echo "PGID=$(getent group docker | cut -d: -f3)" >> .env
 
 - **Dashboard** — scegli il periodo (Giorno / Settimana / Mese) e l'ambito (Tutti / Personale / Casa),
   naviga con le frecce. Vedi entrate, uscite, saldo, ripartizione per categoria e per conto,
-  split Personale/Casa e andamento.
-- **Movimenti** — elenco completo con filtri per mese, tipo, categoria, conto e ambito;
-  pulsante **+** per aggiungere. Ogni movimento ha uno switch **Personale / Casa** e si può
-  **creare una categoria al volo** dal form (pulsante `+` accanto al menu Categoria).
+  split Personale/Casa e andamento. **Tocca il box Entrate o Uscite** per l'elenco dei
+  movimenti di quel tipo nel periodo mostrato. Nella legenda "Spese per categoria" ogni voce
+  ha un indicatore **▲/▼** rispetto alla media dei 3 mesi precedenti.
+- **Movimenti** — elenco completo con **ricerca testo** (descrizione o categoria), filtro di
+  periodo (Tutto / Ultimi 3 mesi / Quest'anno / singoli mesi) e per tipo, categoria, conto,
+  ambito; pulsante **+** per aggiungere. Il form parte dalla **Descrizione** e propone
+  categoria e conto in base allo storico; si può **creare una categoria al volo**
+  (pulsante `+` accanto al menu Categoria). Eliminando un movimento c'è **5 secondi per
+  annullare**.
 - **Previsioni** — voci di budget: importo **mensile** o **una volta l'anno** (con il mese),
   categoria e ambito. La pagina mostra, per l'anno scelto, il **totale previsto**, lo **speso**
   reale, la **proiezione a fine anno** (mesi passati = reale, futuri = previsto), il **budget
-  mensile necessario** (spese previste dell'anno spalmate su 12 mesi, comprese quelle annuali)
-  e il **risparmio potenziale al mese** (confronto con le entrate reali medie dei mesi già
-  trascorsi), oltre al confronto previsto/speso per mese e per categoria. Con un interruttore
-  includi anche le **spese fisse** nella previsione. Le voci previste **non creano movimenti e
-  non influenzano i grafici della Dashboard**: sono solo un'ipotesi di budget.
+  mensile necessario** e il **risparmio potenziale al mese**, oltre al confronto
+  previsto/speso per mese e per categoria. Con un interruttore includi anche le **spese fisse**.
+  Le voci previste **non creano movimenti e non influenzano i grafici della Dashboard**: sono
+  solo un'ipotesi di budget.
+- **Risparmio** — quando ci sono almeno 3 mesi completi di dati, stima entrate e uscite
+  "necessarie" previste, calcola il margine mensile e propone come dividerlo tra **fondo
+  sicurezza** (obiettivo in mensilità di spesa) e **fondo risparmio**, in € e in % delle
+  entrate. Due cursori regolano l'obiettivo del fondo sicurezza e la priorità durante
+  l'accumulo. È solo statistica sui tuoi dati, nessun servizio esterno.
 - **Spese fisse** — regole ricorrenti (mutuo, rata, abbonamento, stipendio…), **ogni mese oppure
-  una volta l'anno** in un mese scelto. A differenza delle voci previste, creano un **movimento
-  vero**, il giorno scelto, finché la regola è **attiva**. Lo switch nella lista la disattiva
-  senza toccare lo storico; «Esegui adesso» forza il controllo. I movimenti generati hanno il
-  badge «fissa» e restano modificabili. All'avvio l'app recupera i mesi/anni arretrati (utile
-  dopo un fermo del server); riattivando una regola **non** si recuperano i periodi in cui
-  era spenta.
+  una volta l'anno** in un mese scelto, con **durata opzionale**: attivando "Durata limitata"
+  imposti il numero di rate/occorrenze e, raggiunto il limite, la regola si disattiva da sola
+  (la lista mostra l'avanzamento, es. `3/12 rate`). A differenza delle voci previste, creano
+  un **movimento vero**, il giorno scelto, finché la regola è **attiva**. Lo switch nella lista
+  la disattiva senza toccare lo storico; «Esegui adesso» forza il controllo. I movimenti
+  generati hanno il badge «fissa» e restano modificabili. All'avvio l'app recupera i
+  mesi/anni arretrati (utile dopo un fermo del server); riattivando una regola **non** si
+  recuperano i periodi in cui era spenta.
 - **Categorie** — crea, rinomina, cambia colore, tipo o **ambito**, oppure elimina. Le categorie
   **Personali** e **Casa** sono separate: nella schermata Categorie appaiono in liste distinte,
   e nei form (Movimento, Spesa fissa, Voce prevista) il menu Categoria mostra solo quelle
@@ -265,7 +314,7 @@ echo "PGID=$(getent group docker | cut -d: -f3)" >> .env
   i movimenti collegati restano «senza conto».
 - **Impostazioni** — versione installata e **aggiornamento dall'app** (controlla / installa
   l'ultima versione da git, se `SELF_UPDATE_ENABLED=true`); **backup** (elenco, «Crea backup
-  adesso», istruzioni di ripristino).
+  adesso», istruzioni di ripristino); sezione **Account** con il pulsante **Esci**.
 
 ---
 
@@ -282,6 +331,9 @@ docker compose exec web npm run user:create
 # oppure senza prompt:
 docker compose exec web npm run user:create -- mario@esempio.it 'una-password' 'Mario'
 ```
+
+> Se usi `docker-compose.npm.yml`, premetti a ogni comando
+> `COMPOSE_FILE=docker-compose.npm.yml` (oppure aggiungi `-f docker-compose.npm.yml`).
 
 Ogni utente ha i propri movimenti, categorie e conti, completamente separati.
 
@@ -311,6 +363,12 @@ serve la connessione al server per caricare o salvare movimenti.
 > Su HTTP puro l'installazione funziona; alcuni browser mostrano il prompt "Installa" solo
 > in HTTPS — in quel caso usa comunque *Aggiungi a Home* dal menu Condividi.
 
+**Dopo un aggiornamento del server:** il codice della web app è servito con
+`Cache-Control: no-store`, quindi basta **chiudere e riaprire** l'app dalla Home per
+avere la versione nuova. (Solo la primissima volta, se l'app era già installata da prima
+di questa modifica, serve una ricarica forzata: apri l'app in Safari/Chrome normale e
+ricarica, oppure togli e riaggiungi l'icona alla Home.)
+
 ---
 
 ## Backup automatico
@@ -321,7 +379,11 @@ Ogni settimana (default: **domenica alle 03:00**, fuso `TZ`) l'app scrive un bac
 /app/backups/soldi-backup-<AAAA-MM-GG_hh-mm-ss>/
 ├── users.csv
 ├── categories.csv
+├── accounts.csv
+├── recurring_rules.csv
+├── planned_expenses.csv
 ├── transactions.csv
+├── savings_settings.csv
 └── manifest.json
 ```
 
@@ -389,6 +451,8 @@ docker compose up -d web
 docker compose exec db psql -U soldi -d soldi -c \
   "SELECT (SELECT count(*) FROM users) AS utenti,
           (SELECT count(*) FROM categories) AS categorie,
+          (SELECT count(*) FROM accounts) AS conti,
+          (SELECT count(*) FROM recurring_rules) AS spese_fisse,
           (SELECT count(*) FROM transactions) AS movimenti;"
 ```
 
@@ -407,23 +471,22 @@ I numeri devono coincidere con quelli nel `manifest.json` del backup.
 
 ```
 soldi/
-├── docker-compose.yml      # web (Node) + db (PostgreSQL) + volume backup
+├── docker-compose.yml      # web (Node) + db (PostgreSQL) + volume backup — porta pubblicata
+├── docker-compose.npm.yml  # variante dietro reverse proxy su rete Docker (nessuna porta)
 ├── Dockerfile
+├── scripts/update.sh       # backup → git pull anonimo → rebuild → verifica
 ├── src/
-│   ├── server.js           # Express, sicurezza (helmet), rotte, SPA fallback
+│   ├── server.js           # Express, sicurezza (helmet), rotte, SPA fallback, no-store sul codice client
 │   ├── db/
 │   │   ├── pool.js          # pool pg condiviso + helper transazioni
 │   │   ├── schema.sql       # schema idempotente (+ ALTER additivi per DB esistenti)
 │   │   └── migrate.js       # applica lo schema all'avvio
 │   ├── auth/                # hashing password, token di sessione, middleware
-│   ├── routes/              # auth, transactions, categories, accounts, recurring, planned, summary, backups, settings
-│   ├── recurring/
-│   │   ├── generate.js      # crea i movimenti dovuti dalle regole attive
-│   │   └── scheduler.js     # catch-up all'avvio + cron giornaliero
-│   └── backup/
-│       ├── backup-core.js   # scrittura CSV + pruning
-│       ├── scheduler.js     # cron settimanale
-│       └── restore.js       # ripristino da CSV
+│   ├── routes/              # auth, transactions, categories, accounts, recurring, planned, summary, savings, backups, settings
+│   ├── recurring/           # generate.js (movimenti dovuti) + scheduler.js (catch-up all'avvio + cron)
+│   ├── summary/savings.js   # modello del piano di risparmio (statistica pura)
+│   ├── transactions/suggest.js  # suggerimenti descrizione/categoria/conto dallo storico
+│   └── backup/              # backup-core.js (CSV + pruning), scheduler.js (cron settimanale), restore.js
 └── public/                  # SPA vanilla JS (nessun build step)
     ├── index.html
     ├── css/styles.css
@@ -451,17 +514,20 @@ Tutte sotto `/api`, JSON, autenticazione via cookie di sessione.
 | `POST` | `/api/auth/login` | Login |
 | `POST` | `/api/auth/logout` | Logout |
 | `GET`  | `/api/auth/me` | Utente corrente |
-| `GET`  | `/api/transactions` | Lista (filtri: `from`, `to`, `type`, `categoryId`, `accountId`, `scope`, `limit`, `offset`) |
+| `GET`  | `/api/transactions` | Lista (filtri: `q`, `from`, `to`, `type`, `categoryId`, `accountId`, `scope`, `limit`, `offset`) |
 | `POST` | `/api/transactions` | Crea movimento (`accountId`, `scope` opzionali) |
 | `PATCH`| `/api/transactions/:id` | Modifica |
 | `DELETE`| `/api/transactions/:id` | Elimina |
+| `GET`  | `/api/transactions/suggest?note&type&scope` | Suggerimenti (descrizione, categoria, conto) dallo storico |
 | `GET`/`POST`/`PATCH`/`DELETE` | `/api/categories` | Gestione categorie (`kind`, `scope`: personal\|home) |
 | `GET`/`POST`/`PATCH`/`DELETE` | `/api/accounts` | Gestione conti |
-| `GET`/`POST`/`PATCH`/`DELETE` | `/api/recurring` | Gestione spese fisse (`cadence`: monthly\|yearly + `month`; `DELETE ?keepMovimenti=true` tiene i movimenti già generati) |
+| `GET`/`POST`/`PATCH`/`DELETE` | `/api/recurring` | Gestione spese fisse (`cadence`: monthly\|yearly + `month`; `totalOccurrences` per la durata limitata; `DELETE ?keepMovimenti=true` tiene i movimenti già generati) |
 | `POST` | `/api/recurring/run` | Genera subito i movimenti fissi dovuti |
 | `GET`/`POST`/`PATCH`/`DELETE` | `/api/planned` | Gestione voci di budget (spese previste) |
 | `GET`  | `/api/planned/summary?year=YYYY&includeRecurring=true\|false&scope=` | Previsione annuale: totali, proiezione, budget mensile necessario, risparmio potenziale, per mese/categoria/ambito |
-| `GET`  | `/api/summary/overview?anchor=YYYY-MM-DD&scope=personal\|home` | Riepiloghi giorno/settimana/mese, split Personale/Casa, ripartizione per conto |
+| `GET`  | `/api/savings` | Piano di risparmio: entrate/uscite previste, margine, % consigliate per fondo sicurezza e fondo risparmio |
+| `PATCH`| `/api/savings` | Aggiorna `emergencyMonths` / `emergencySplit` |
+| `GET`  | `/api/summary/overview?anchor=YYYY-MM-DD&scope=personal\|home` | Riepiloghi giorno/settimana/mese, ripartizione per categoria (con media 3 mesi) e per conto, split Personale/Casa |
 | `GET`  | `/api/summary/range?from&to&group=day\|week\|month&scope=` | Serie temporale aggregata |
 | `GET`  | `/api/backups` | Elenco backup |
 | `POST` | `/api/backups` | Crea backup adesso |
