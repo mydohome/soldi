@@ -305,16 +305,21 @@ In NPM: **Forward Hostname** `<IP_DEL_SERVER_SOLDI>`, **Forward Port** `3010`,
   generati hanno il badge «fissa» e restano modificabili. All'avvio l'app recupera i
   mesi/anni arretrati (utile dopo un fermo del server); riattivando una regola **non** si
   recuperano i periodi in cui era spenta.
-- **Categorie** — crea, rinomina, cambia colore, tipo o **ambito**, oppure elimina. Le categorie
-  **Personali** e **Casa** sono separate: nella schermata Categorie appaiono in liste distinte,
-  e nei form (Movimento, Spesa fissa, Voce prevista) il menu Categoria mostra solo quelle
-  dell'ambito selezionato con lo switch Personale/Casa. Eliminando una categoria i movimenti
-  collegati **restano** (diventano «senza categoria»).
-- **Conti** — stessa cosa per i conti (contanti, conto corrente, carta…). Eliminando un conto
-  i movimenti collegati restano «senza conto».
-- **Impostazioni** — versione installata e **aggiornamento dall'app** (controlla / installa
-  l'ultima versione da git, se `SELF_UPDATE_ENABLED=true`); **backup** (elenco, «Crea backup
-  adesso», istruzioni di ripristino); sezione **Account** con il pulsante **Esci**.
+- **Impostazioni** — non è solo backup e aggiornamenti: in cima c'è la sezione
+  **Configurazione**, da cui si aprono
+  - **Categorie** — crea, rinomina, cambia colore, tipo o **ambito**, oppure elimina. Le
+    categorie **Personali** e **Casa** sono separate: nella schermata Categorie appaiono in
+    liste distinte, e nei form (Movimento, Spesa fissa, Voce prevista) il menu Categoria
+    mostra solo quelle dell'ambito selezionato con lo switch Personale/Casa. Eliminando una
+    categoria i movimenti collegati **restano** (diventano «senza categoria»).
+  - **Conti** — stessa cosa per i conti (contanti, conto corrente, carta…). Eliminando un
+    conto i movimenti collegati restano «senza conto».
+
+  seguite da versione installata e **aggiornamento dall'app** (controlla / installa l'ultima
+  versione da git, se `SELF_UPDATE_ENABLED=true`), **backup** (elenco, «Crea backup adesso»,
+  istruzioni di ripristino) e la sezione **Account** con il pulsante **Esci**.
+  Categorie e Conti non sono nel menu principale (restano solo le schermate usate più
+  spesso), ma restano raggiungibili anche direttamente da `#/categorie` e `#/conti`.
 
 ---
 
