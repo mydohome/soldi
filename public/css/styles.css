@@ -147,6 +147,19 @@ button { cursor: pointer; }
 }
 
 
+.back-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  margin-bottom: 10px;
+  color: var(--ink-faint);
+  font-size: 0.86rem;
+  font-weight: 600;
+  text-decoration: none;
+}
+.back-link:hover { color: var(--ink-soft); }
+.back-link svg { width: 15px; height: 15px; }
+
 .page-head {
   display: flex;
   align-items: flex-end;
@@ -776,6 +789,34 @@ button { cursor: pointer; }
   margin-bottom: 8px;
 }
 .scope-group-title svg { width: 14px; height: 14px; }
+
+.settings-link {
+  display: flex;
+  align-items: center;
+  gap: 13px;
+  padding: 14px;
+  border-bottom: 1px solid var(--line);
+  text-decoration: none;
+  color: inherit;
+}
+.settings-link:last-child { border-bottom: none; }
+.settings-link:hover { background: var(--bg-sunken); }
+.settings-link .settings-ico {
+  width: 34px;
+  height: 34px;
+  border-radius: 10px;
+  display: grid;
+  place-content: center;
+  flex: none;
+  background: color-mix(in srgb, var(--brand) 14%, transparent);
+  color: var(--brand);
+}
+.settings-link .settings-ico svg { width: 18px; height: 18px; }
+.settings-link .meta { flex: 1 1 auto; min-width: 0; }
+.settings-link .name { font-weight: 650; }
+.settings-link .desc { color: var(--ink-faint); font-size: 0.82rem; }
+.settings-link .chev { flex: none; color: var(--ink-faint); }
+.settings-link .chev svg { width: 16px; height: 16px; }
 
 .muted { color: var(--ink-faint); }
 .mono { font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, monospace; font-size: 0.85em; }
