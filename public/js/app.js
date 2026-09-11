@@ -236,25 +236,38 @@ const NAV = [
   { id: 'previsioni', label: 'Previsioni', short: 'Prev.', icon: icons.target },
   { id: 'risparmio', label: 'Risparmio', short: 'Rispar.', icon: icons.wallet },
   { id: 'fisse', label: 'Spese fisse', short: 'Fisse', icon: icons.repeat },
-  { id: 'categorie', label: 'Categorie', short: 'Cat.', icon: icons.tag },
-  { id: 'conti', label: 'Conti', icon: icons.bank },
   { id: 'impostazioni', label: 'Impostazioni', short: 'Impost.', icon: icons.settings },
 ];
 
+// Reachable from Impostazioni → Configurazione, not from the main nav — keeps
+// the mobile tab bar to the screens used day-to-day.
+const SETTINGS_LINKS = [
+  { id: 'categorie', label: 'Categorie', desc: 'Colore, tipo e ambito delle voci', icon: icons.tag },
+  { id: 'conti', label: 'Conti', desc: 'Contanti, conto corrente, carta…', icon: icons.bank },
+];
+const SETTINGS_GROUP = ['impostazioni', ...SETTINGS_LINKS.map((s) => s.id)];
+
 function currentView() {
   const hash = location.hash.replace('#/', '') || 'dashboard';
-  return NAV.some((n) => n.id === hash) ? hash : 'dashboard';
+  const known = [...NAV, ...SETTINGS_LINKS].some((n) => n.id === hash);
+  return known ? hash : 'dashboard';
+}
+
+// "Impostazioni" also lights up for the screens nested under it (Categorie, Conti).
+function isNavActive(id) {
+  return id === state.view || (id === 'impostazioni' && SETTINGS_GROUP.includes(state.view));
 }
 
 function renderShell() {
   state.view = currentView();
   root.innerHTML = '';
+  const isActive = isNavActive;
   const shell = h(`
     <div class="shell">
       <aside class="sidebar">
         <div class="brand">${logoMark}<span>Soldi</span></div>
         ${NAV.map(
-          (n) => `<a class="nav-link ${n.id === state.view ? 'active' : ''}" href="#/${n.id}">${n.icon}<span>${n.label}</span></a>`
+          (n) => `<a class="nav-link ${isActive(n.id) ? 'active' : ''}" href="#/${n.id}">${n.icon}<span>${n.label}</span></a>`
         ).join('')}
         <div class="nav-spacer"></div>
         <button class="nav-link" id="logout">${icons.logout}<span>Esci</span></button>
@@ -262,7 +275,7 @@ function renderShell() {
       <main class="main" id="main"></main>
       <nav class="tabbar">
         ${NAV.map(
-          (n) => `<button data-view="${n.id}" class="${n.id === state.view ? 'active' : ''}">${n.icon}<span>${n.short || n.label}</span></button>`
+          (n) => `<button data-view="${n.id}" class="${isActive(n.id) ? 'active' : ''}">${n.icon}<span>${n.short || n.label}</span></button>`
         ).join('')}
       </nav>
       <button class="fab" id="fab" aria-label="Aggiungi movimento">${icons.plus}</button>
@@ -281,11 +294,12 @@ function renderShell() {
 
 function renderView() {
   state.view = currentView();
-  document.querySelectorAll('.nav-link').forEach((a) =>
-    a.classList.toggle('active', a.getAttribute('href') === `#/${state.view}`)
-  );
+  document.querySelectorAll('.nav-link').forEach((a) => {
+    const id = a.getAttribute('href')?.replace('#/', '');
+    if (id) a.classList.toggle('active', isNavActive(id));
+  });
   document.querySelectorAll('.tabbar button').forEach((b) =>
-    b.classList.toggle('active', b.dataset.view === state.view)
+    b.classList.toggle('active', isNavActive(b.dataset.view))
   );
   const main = document.getElementById('main');
   main.innerHTML = '<div class="boot"><div class="boot-mark"></div></div>';
@@ -738,6 +752,7 @@ async function viewCategorie(main) {
   main.appendChild(
     h(`
     <div>
+      <a class="back-link" href="#/impostazioni">${icons.chevronL}Impostazioni</a>
       <div class="page-head">
         <div><h1>Categorie</h1><p>Organizza spese ed entrate, separate per ambito</p></div>
         <button class="btn primary" id="add-cat">${icons.plus}<span>Nuova</span></button>
@@ -1631,6 +1646,7 @@ async function viewConti(main) {
   main.appendChild(
     h(`
     <div>
+      <a class="back-link" href="#/impostazioni">${icons.chevronL}Impostazioni</a>
       <div class="page-head">
         <div><h1>Conti</h1><p>Da associare ai movimenti, come le categorie</p></div>
         <button class="btn primary" id="add-acc">${icons.plus}<span>Nuovo</span></button>
@@ -1753,7 +1769,19 @@ async function viewImpostazioni(main) {
     h(`
     <div>
       <div class="page-head">
-        <div><h1>Impostazioni</h1><p>Aggiornamenti e backup</p></div>
+        <div><h1>Impostazioni</h1><p>Configurazione, aggiornamenti e backup</p></div>
+      </div>
+
+      <h2 class="section-title">Configurazione</h2>
+      <div class="card" style="margin-bottom:6px">
+        ${SETTINGS_LINKS.map(
+          (s) => `
+        <a class="settings-link" href="#/${s.id}">
+          <span class="settings-ico">${s.icon}</span>
+          <div class="meta"><div class="name">${escapeHtml(s.label)}</div><div class="desc">${escapeHtml(s.desc)}</div></div>
+          <span class="chev">${icons.chevronR}</span>
+        </a>`
+        ).join('')}
       </div>
 
       <h2 class="section-title">Aggiornamento</h2>
