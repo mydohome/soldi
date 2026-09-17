@@ -411,6 +411,9 @@ o dal pulsante **Crea backup adesso** nella sezione *Backup* dell'app.
 > ⚠️ Il ripristino **cancella e sostituisce** tutti i dati presenti nel database con
 > quelli del backup scelto. Fai prima un backup dello stato attuale se ha senso.
 
+Per gli scenari B e D c'è uno script che fa da solo schema + ripristino + avvio +
+verifica: `./scripts/disaster-recovery.sh`. Vedi i dettagli più sotto.
+
 ### Scenario A — l'app non parte più / dati corrotti, ma il volume del DB esiste
 
 ```bash
@@ -427,25 +430,62 @@ docker compose down -v
 # 2. assicurati che ./backups contenga le cartelle soldi-backup-*
 ls backups/
 
-# 3. avvia solo il database e attendi che sia pronto
-docker compose up -d db
+# 3. schema + ripristino + avvio, in un solo comando
+./scripts/disaster-recovery.sh --latest
+```
 
-# 4. crea lo schema e ripristina un backup specifico
+<details>
+<summary>Passo-passo manuale (equivalente allo script, se preferisci i comandi singoli)</summary>
+
+```bash
+docker compose up -d db
 docker compose run --rm web npm run migrate
 docker compose run --rm web npm run restore -- /app/backups/soldi-backup-2026-01-05_03-00-00 --yes
-
-# 5. avvia l'app
 docker compose up -d web
 ```
 
-### Scenario C — ripristino su un'altra macchina
+</details>
+
+### Scenario C — ripristino su un'altra macchina (dati persi, app ancora installata altrove)
 
 1. Installa Docker, clona il repo, crea `.env` (riusa lo **stesso** `JWT_SECRET` se vuoi
    che le sessioni esistenti restino valide; altrimenti basta rifare il login).
 2. Copia le cartelle `soldi-backup-*` dentro `./backups`.
-3. Esegui i passi 3–5 dello **Scenario B**.
+3. Esegui il passo 3 dello **Scenario B** (`./scripts/disaster-recovery.sh --latest`).
+
+### Scenario D — disastro completo: reinstallazione da zero della app
+
+Il server stesso non esiste più (disco rotto, VM persa, provider cambiato…): si
+riparte da un sistema vuoto e si ricostruisce tutto, dati inclusi. Presuppone che
+tu abbia una copia di `./backups` fatta prima del disastro, conservata altrove
+(vedi il consiglio in [Backup automatico](#backup-automatico)).
+
+1. **Prepara la macchina**: installa Docker + il plugin Docker Compose.
+2. **Clona il repository**:
+   ```bash
+   git clone https://github.com/mydohome/soldi.git
+   cd soldi
+   ```
+3. **Ricrea `.env`** da `.env.example` (vedi [Configurazione](#configurazione-env)).
+   Genera un nuovo `JWT_SECRET` con `openssl rand -hex 32` (riusa quello vecchio
+   solo se vuoi che le sessioni già aperte restino valide). Scegli lo scenario di
+   rete che ti serve — accesso diretto, o uno dei tre in
+   [Dietro un reverse proxy](#dietro-un-reverse-proxy-nginx-proxy-manager) —
+   e imposta `BIND_ADDR`/`HOST_PORT` (o `docker-compose.npm.yml`) di conseguenza.
+4. **Recupera i backup**: copia le cartelle `soldi-backup-*` salvate altrove
+   dentro `./backups`.
+5. **Ripristina tutto**:
+   ```bash
+   ./scripts/disaster-recovery.sh --latest
+   ```
+   Crea lo schema, ripristina i dati, avvia l'app e ne verifica la salute — vedi
+   [`scripts/disaster-recovery.sh`](scripts/disaster-recovery.sh).
+6. Se eri dietro NPM, ricrea il **Proxy Host** (dominio, forward, certificato):
+   la configurazione di NPM non fa parte del backup di Soldi.
 
 ### Verifica dopo il ripristino
+
+Lo script `disaster-recovery.sh` la stampa già in automatico; a mano:
 
 ```bash
 docker compose exec db psql -U soldi -d soldi -c \
@@ -460,9 +500,13 @@ I numeri devono coincidere con quelli nel `manifest.json` del backup.
 
 ### Note
 
+- `./scripts/disaster-recovery.sh [--latest|nome-backup]` copre gli scenari B, C e D:
+  attende il database, crea lo schema, ripristina i dati, avvia l'app, controlla
+  `/api/health` e stampa il riepilogo dei conteggi. Richiede solo `.env` e una
+  cartella `./backups` già popolata — non installa Docker né clona il repo.
 - Il ripristino è **idempotente**: puoi rieseguirlo, riparte sempre da `TRUNCATE`.
 - Le sequenze degli ID vengono riallineate automaticamente dopo l'import.
-- Senza `--yes` il comando chiede conferma interattiva (digita `yes`).
+- Senza `--yes` il comando `npm run restore` chiede conferma interattiva (digita `yes`).
 - Il formato è CSV standard: in caso estremo puoi importare i file a mano con `psql \copy`.
 
 ---
