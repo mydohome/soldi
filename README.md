@@ -390,6 +390,32 @@ docker compose exec web npm run user:telegram -- mario@esempio.it remove  # rimu
 > **fuori** dalla cartella `./backups` (i backup contengono le credenziali
 > cifrate, ma senza la chiave restano inutilizzabili anche a te).
 
+#### Backup e ripristino per singolo utente
+
+Diverso dal [backup globale](#backup-automatico) (tutte le tabelle, tutti gli
+utenti insieme, pensato per il disastro totale): questo esporta/reimporta
+**solo i dati di un utente** — categorie, conti, spese fisse, voci previste,
+movimenti, risparmio e configurazione Telegram — senza toccare gli altri
+utenti. Utile prima di una modifica rischiosa sui dati di una sola persona, o
+come base per un futuro invio del backup su Telegram.
+
+```bash
+docker compose exec web npm run user:backup -- mario@esempio.it
+docker compose exec web npm run user:restore -- mario@esempio.it --latest
+docker compose exec web npm run user:restore -- mario@esempio.it soldi-user-backup-3-2026-01-05_03-00-00
+```
+
+Anche dal [menu interattivo](#menu-interattivo-consigliato) (`user:manage`),
+voci **5** e **6** per l'utente scelto. Il ripristino **rigenera gli ID**
+(categorie, conti, spese fisse, movimenti): sono globali e condivisi con gli
+altri utenti, quindi non si possono riusare quelli del backup — i collegamenti
+interni (movimento → categoria/conto/spesa fissa) restano corretti, li
+aggiorna automaticamente. I backup personali vivono nella stessa cartella
+`./backups` di quelli globali, con un nome distinto
+(`soldi-user-backup-<id>-<timestamp>`); ne vengono conservati gli ultimi
+`BACKUP_KEEP` per utente, indipendentemente dai backup globali o degli altri
+utenti.
+
 ---
 
 ## Installare come app su iPhone/Android
@@ -569,12 +595,14 @@ soldi/
 │   │   └── migrate.js       # applica lo schema all'avvio
 │   ├── auth/                # hashing password, token di sessione, middleware, config Telegram
 │   ├── crypto/secrets.js    # cifratura AES-256-GCM per segreti salvati nel DB (SECRETS_KEY)
-│   ├── scripts/             # CLI: user:create/password/list/telegram/manage (docker compose exec web npm run …)
+│   ├── scripts/             # CLI: user:create/password/list/telegram/backup/restore/manage
 │   ├── routes/              # auth, transactions, categories, accounts, recurring, planned, summary, savings, backups, settings
 │   ├── recurring/           # generate.js (movimenti dovuti) + scheduler.js (catch-up all'avvio + cron)
 │   ├── summary/savings.js   # modello del piano di risparmio (statistica pura)
 │   ├── transactions/suggest.js  # suggerimenti descrizione/categoria/conto dallo storico
-│   └── backup/              # backup-core.js (CSV + pruning), scheduler.js (cron settimanale), restore.js
+│   └── backup/              # backup-core.js (CSV globale + per-utente, pruning), scheduler.js (cron
+│                             # settimanale), restore.js (globale), restore-user.js (per-utente, con
+│                             # rigenerazione ID e remap delle FK)
 └── public/                  # SPA vanilla JS (nessun build step)
     ├── index.html
     ├── css/styles.css

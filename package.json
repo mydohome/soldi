@@ -18,6 +18,8 @@
     "user:password": "node src/scripts/set-password.js",
     "user:list": "node src/scripts/list-users.js",
     "user:telegram": "node src/scripts/telegram-config.js",
+    "user:backup": "node src/scripts/user-backup.js",
+    "user:restore": "node src/scripts/user-restore.js",
     "user:manage": "node src/scripts/admin.js"
   },
   "dependencies": {

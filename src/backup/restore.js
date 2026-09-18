@@ -4,15 +4,11 @@ require('dotenv').config();
 
 const fs = require('fs');
 const path = require('path');
-const readline = require('readline');
-const { parse } = require('csv-parse/sync');
-
 const { pool, withTransaction } = require('../db/pool');
 const TABLES = require('./tables');
 const { BACKUP_ROOT } = require('./backup-core');
-
-// Columns where an empty CSV field is a real empty string, not NULL.
-const KEEP_EMPTY = new Set(['note', 'display_name']);
+const { readTableCsv } = require('./csv-table');
+const { confirm } = require('./confirm');
 
 function resolveBackupDir(arg) {
   if (arg && arg !== '--latest') {
@@ -28,38 +24,6 @@ function resolveBackupDir(arg) {
     .sort();
   if (candidates.length === 0) throw new Error(`No backups found under ${BACKUP_ROOT}`);
   return path.join(BACKUP_ROOT, candidates[candidates.length - 1]);
-}
-
-// Reads <table>.csv and returns { columns, rows }. Only the columns actually
-// present in the CSV header are used, so a backup taken by an older version
-// (missing a table or some columns) still restores — the DB defaults fill the
-// gaps. A missing file is treated as an empty table with a warning.
-function readTableCsv(dir, table) {
-  const file = path.join(dir, `${table.name}.csv`);
-  if (!fs.existsSync(file)) {
-    console.warn(`[restore]   ${table.name}.csv not in backup — skipping (older backup format?)`);
-    return { columns: [], rows: [] };
-  }
-  const records = parse(fs.readFileSync(file, 'utf8'), { columns: true, skip_empty_lines: true });
-  const present = records.length
-    ? table.columns.filter((col) => col in records[0])
-    : table.columns;
-  const rows = records.map((rec) =>
-    present.map((col) => {
-      const raw = rec[col];
-      if (raw === undefined || raw === '') return raw === '' && KEEP_EMPTY.has(col) ? '' : null;
-      return raw;
-    })
-  );
-  return { columns: present, rows };
-}
-
-async function confirm(question) {
-  if (process.argv.includes('--yes') || process.env.RESTORE_ASSUME_YES === 'true') return true;
-  const rl = readline.createInterface({ input: process.stdin, output: process.stdout });
-  const answer = await new Promise((res) => rl.question(question, res));
-  rl.close();
-  return answer.trim().toLowerCase() === 'yes';
 }
 
 async function main() {
