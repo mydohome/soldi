@@ -11,6 +11,8 @@ require('dotenv').config();
 const { pool, query } = require('../db/pool');
 const { createUser, setPassword } = require('../auth/users');
 const { setTelegramConfig, getTelegramStatus, clearTelegramConfig } = require('../auth/telegram');
+const { createUserBackup, listUserBackups } = require('../backup/backup-core');
+const { resolveUserBackupDir, readManifest, restoreUserBackup } = require('../backup/restore-user');
 const { ask } = require('./prompt');
 
 async function listUsers() {
@@ -51,6 +53,40 @@ async function pickUser() {
   return users[idx];
 }
 
+async function restoreMenu(user) {
+  const backups = listUserBackups(user.id);
+  if (backups.length === 0) {
+    console.log('\nNessun backup personale trovato per questo utente.');
+    return;
+  }
+
+  console.log('\nBackup disponibili (dal più vecchio al più recente):');
+  backups.forEach((name, i) => console.log(`  ${i + 1}) ${name}`));
+  const pick = (await ask('Numero (invio = più recente): ')).trim();
+  const dirName = pick ? backups[Number(pick) - 1] : backups[backups.length - 1];
+  if (!dirName) {
+    console.log('Scelta non valida.');
+    return;
+  }
+
+  const dir = resolveUserBackupDir(user.id, dirName);
+  const manifest = readManifest(dir);
+  if (manifest) {
+    for (const [name, info] of Object.entries(manifest.tables)) console.log(`  ${name}: ${info.rows} righe`);
+  }
+  console.log(`\nQuesto SOSTITUISCE tutti i dati di ${user.email}. Gli altri utenti non sono toccati.`);
+
+  const confirmed = (await ask('Confermi? (scrivi yes): ')).trim().toLowerCase() === 'yes';
+  if (!confirmed) {
+    console.log('Annullato.');
+    return;
+  }
+
+  const summary = await restoreUserBackup({ userId: user.id, dir });
+  console.log('\n✓ Ripristinato:');
+  for (const [name, count] of Object.entries(summary)) console.log(`    ${name}: ${count} righe`);
+}
+
 /** Ritorna 'quit' o 'back' quando l'utente esce dal sotto-menu. */
 async function userMenu(user) {
   for (;;) {
@@ -59,6 +95,8 @@ async function userMenu(user) {
     console.log('  2) Configura Telegram (bot token + chat id)');
     console.log('  3) Stato Telegram');
     console.log('  4) Rimuovi configurazione Telegram');
+    console.log('  5) Crea backup personale (solo i dati di questo utente)');
+    console.log('  6) Ripristina da un backup personale');
     console.log('  b) Torna alla lista utenti');
     console.log('  q) Esci');
 
@@ -86,6 +124,11 @@ async function userMenu(user) {
         console.log(
           result.removed ? '\n✓ Configurazione Telegram rimossa.' : '\nNessuna configurazione da rimuovere.'
         );
+      } else if (choice === '5') {
+        const dir = await createUserBackup({ userId: user.id, email: user.email });
+        console.log(`\n✓ Backup creato in ${dir}`);
+      } else if (choice === '6') {
+        await restoreMenu(user);
       } else {
         console.log('Scelta non valida.');
       }
