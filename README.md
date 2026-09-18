@@ -325,22 +325,31 @@ In NPM: **Forward Hostname** `<IP_DEL_SERVER_SOLDI>`, **Forward Port** `3010`,
 login mostra comunque «Crea account», anche con `ALLOW_REGISTRATION=false`. Registra il tuo
 account lì.
 
-**Aggiungere altri utenti** (o quando la registrazione è disabilitata) — da terminale sul server:
-
-```bash
-docker compose exec web npm run user:create
-# oppure senza prompt:
-docker compose exec web npm run user:create -- mario@esempio.it 'una-password' 'Mario'
-```
+**Aggiungere altri utenti** (o quando la registrazione è disabilitata) — da terminale sul server.
 
 > Se usi `docker-compose.npm.yml`, premetti a ogni comando
 > `COMPOSE_FILE=docker-compose.npm.yml` (oppure aggiungi `-f docker-compose.npm.yml`).
 
 Ogni utente ha i propri movimenti, categorie e conti, completamente separati.
 
-Altri comandi:
+### Menu interattivo (consigliato)
 
 ```bash
+docker compose exec web npm run user:manage
+```
+
+Un menu a schermo: elenca gli utenti esistenti (o crea un nuovo utente), poi per
+l'utente scelto puoi **cambiare la password** e **configurare/rimuovere Telegram**
+(bot token + chat id) senza ricordare comandi e flag. Va lanciato in un terminale
+vero (non in uno script non interattivo).
+
+### Comandi singoli (per script/automazione)
+
+```bash
+docker compose exec web npm run user:create
+# oppure senza prompt:
+docker compose exec web npm run user:create -- mario@esempio.it 'una-password' 'Mario'
+
 docker compose exec web npm run user:list                 # elenco utenti
 docker compose exec web npm run user:password             # reimposta una password (prompt)
 docker compose exec web npm run user:password -- mario@esempio.it 'nuova-password'
@@ -349,13 +358,13 @@ docker compose exec web npm run user:password -- mario@esempio.it 'nuova-passwor
 > In alternativa puoi riattivare temporaneamente la registrazione: `ALLOW_REGISTRATION=true`
 > nel `.env` → `./scripts/update.sh` → registri → rimetti `false` → `./scripts/update.sh`.
 
-### Configurazione Telegram (bot token + chat id)
+#### Configurazione Telegram (bot token + chat id)
 
 Serve per una futura funzione di invio del backup su Telegram. Bot token e chat id
 sono **cifrati nel database** (chiave `SECRETS_KEY` nel `.env`, vedi
-[Configurazione](#configurazione-env)) e gestiti **solo da qui**: non esiste
-alcuna schermata web né rotta API che li legge o li scrive, quindi servono
-accesso al server per configurarli.
+[Configurazione](#configurazione-env)) e gestiti **solo da CLI** (menu interattivo
+sopra, o il comando singolo sotto): non esiste alcuna schermata web né rotta API
+che li legge o li scrive, quindi servono accesso al server per configurarli.
 
 ```bash
 # genera la chiave una sola volta, se non l'hai già fatto
@@ -552,7 +561,7 @@ soldi/
 │   │   └── migrate.js       # applica lo schema all'avvio
 │   ├── auth/                # hashing password, token di sessione, middleware, config Telegram
 │   ├── crypto/secrets.js    # cifratura AES-256-GCM per segreti salvati nel DB (SECRETS_KEY)
-│   ├── scripts/             # CLI: user:create/password/list/telegram (docker compose exec web npm run …)
+│   ├── scripts/             # CLI: user:create/password/list/telegram/manage (docker compose exec web npm run …)
 │   ├── routes/              # auth, transactions, categories, accounts, recurring, planned, summary, savings, backups, settings
 │   ├── recurring/           # generate.js (movimenti dovuti) + scheduler.js (catch-up all'avvio + cron)
 │   ├── summary/savings.js   # modello del piano di risparmio (statistica pura)
