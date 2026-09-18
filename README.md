@@ -314,8 +314,9 @@ In NPM: **Forward Hostname** `<IP_DEL_SERVER_SOLDI>`, **Forward Port** `3010`,
 - **Conti** — stessa cosa per i conti (contanti, conto corrente, carta…). Eliminando un conto
   i movimenti collegati restano «senza conto».
 - **Impostazioni** — versione installata e **aggiornamento dall'app** (controlla / installa
-  l'ultima versione da git, se `SELF_UPDATE_ENABLED=true`); **backup** (elenco, «Crea backup
-  adesso», istruzioni di ripristino); sezione **Account** con il pulsante **Esci**.
+  l'ultima versione da git, se `SELF_UPDATE_ENABLED=true`); **i tuoi backup** (elenco, «Crea
+  backup adesso», istruzioni di ripristino — solo i tuoi dati, il backup globale non è
+  raggiungibile da qui); sezione **Account** con il pulsante **Esci**.
 
 ---
 
@@ -482,7 +483,9 @@ docker compose exec web npm run backup                        # globale
 docker compose exec web npm run user:backup -- mario           # solo un utente
 ```
 
-o dal pulsante **Crea backup adesso** nella sezione *Backup* dell'app (backup globale).
+o dal pulsante **Crea backup adesso** nella sezione *Backup* dell'app — quello crea e mostra
+**solo il backup dell'utente loggato**: il backup globale non è raggiungibile dall'app (nessuna
+rotta API lo espone), resta gestibile solo da terminale sul server o dal cron settimanale.
 
 > Consiglio: copia periodicamente l'intera cartella `./backups` fuori dalla macchina.
 > Il backup CSV è indipendente dal volume del database: se perdi il volume, i CSV bastano
@@ -661,8 +664,8 @@ Tutte sotto `/api`, JSON, autenticazione via cookie di sessione.
 | `PATCH`| `/api/savings` | Aggiorna `emergencyMonths` / `emergencySplit` |
 | `GET`  | `/api/summary/overview?anchor=YYYY-MM-DD&scope=personal\|home` | Riepiloghi giorno/settimana/mese, ripartizione per categoria (con media 3 mesi) e per conto, split Personale/Casa |
 | `GET`  | `/api/summary/range?from&to&group=day\|week\|month&scope=` | Serie temporale aggregata |
-| `GET`  | `/api/backups` | Elenco backup |
-| `POST` | `/api/backups` | Crea backup adesso |
+| `GET`  | `/api/backups` | Elenco dei backup **dell'utente loggato** (mai il backup globale) |
+| `POST` | `/api/backups` | Crea un backup **dell'utente loggato** |
 | `GET`  | `/api/settings/version` | Versione installata (SHA git) |
 | `GET`  | `/api/settings/check-update` | Confronta con `origin/main` |
 | `POST` | `/api/settings/update` | `git pull` + riavvio (se `SELF_UPDATE_ENABLED=true`) |
