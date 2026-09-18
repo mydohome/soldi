@@ -335,7 +335,9 @@ Ogni utente ha i propri movimenti, categorie e conti, completamente separati.
 ### Menu interattivo (consigliato)
 
 ```bash
-docker compose exec web npm run user:manage
+./scripts/manage-users.sh
+# equivalente a:  docker compose exec web npm run user:manage
+# con docker-compose.npm.yml:  COMPOSE_FILE=docker-compose.npm.yml ./scripts/manage-users.sh
 ```
 
 Un menu a schermo: elenca gli utenti esistenti (o crea un nuovo utente), poi per
