@@ -16,7 +16,9 @@
     "restore": "node src/backup/restore.js",
     "user:create": "node src/scripts/create-user.js",
     "user:password": "node src/scripts/set-password.js",
-    "user:list": "node src/scripts/list-users.js"
+    "user:list": "node src/scripts/list-users.js",
+    "user:telegram": "node src/scripts/telegram-config.js",
+    "user:manage": "node src/scripts/admin.js"
   },
   "dependencies": {
     "bcryptjs": "^2.4.3",

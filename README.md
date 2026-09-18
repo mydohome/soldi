@@ -268,6 +268,7 @@ In NPM: **Forward Hostname** `<IP_DEL_SERVER_SOLDI>`, **Forward Port** `3010`,
 | `RECURRING_CRON` | `5 6 * * *` | Quando controllare le spese fisse dovute (+ sempre all'avvio). |
 | `SELF_UPDATE_ENABLED` | `false` | `true` = il pulsante **Aggiorna** in Impostazioni fa `git pull` + riavvio del container (senza rebuild). Le modifiche a `Dockerfile`, dipendenze o `docker-compose.yml` richiedono comunque `./scripts/update.sh`. |
 | `PUID` / `PGID` | `1000` | Solo `docker-compose.npm.yml`: uid/gid con cui gira il container, così l'aggiornamento dall'app può scrivere nel checkout git. Vedi lo scenario B della sezione reverse proxy. |
+| `SECRETS_KEY` | — (facoltativa) | Chiave di cifratura per segreti applicativi (oggi: le credenziali Telegram, vedi [Gestione utenti](#gestione-utenti)). Serve solo a `npm run user:telegram`. Genera con `openssl rand -hex 32`. |
 
 ---
 
@@ -324,22 +325,33 @@ In NPM: **Forward Hostname** `<IP_DEL_SERVER_SOLDI>`, **Forward Port** `3010`,
 login mostra comunque «Crea account», anche con `ALLOW_REGISTRATION=false`. Registra il tuo
 account lì.
 
-**Aggiungere altri utenti** (o quando la registrazione è disabilitata) — da terminale sul server:
-
-```bash
-docker compose exec web npm run user:create
-# oppure senza prompt:
-docker compose exec web npm run user:create -- mario@esempio.it 'una-password' 'Mario'
-```
+**Aggiungere altri utenti** (o quando la registrazione è disabilitata) — da terminale sul server.
 
 > Se usi `docker-compose.npm.yml`, premetti a ogni comando
 > `COMPOSE_FILE=docker-compose.npm.yml` (oppure aggiungi `-f docker-compose.npm.yml`).
 
 Ogni utente ha i propri movimenti, categorie e conti, completamente separati.
 
-Altri comandi:
+### Menu interattivo (consigliato)
 
 ```bash
+./scripts/manage-users.sh
+# equivalente a:  docker compose exec web npm run user:manage
+# con docker-compose.npm.yml:  COMPOSE_FILE=docker-compose.npm.yml ./scripts/manage-users.sh
+```
+
+Un menu a schermo: elenca gli utenti esistenti (o crea un nuovo utente), poi per
+l'utente scelto puoi **cambiare la password** e **configurare/rimuovere Telegram**
+(bot token + chat id) senza ricordare comandi e flag. Va lanciato in un terminale
+vero (non in uno script non interattivo).
+
+### Comandi singoli (per script/automazione)
+
+```bash
+docker compose exec web npm run user:create
+# oppure senza prompt:
+docker compose exec web npm run user:create -- mario@esempio.it 'una-password' 'Mario'
+
 docker compose exec web npm run user:list                 # elenco utenti
 docker compose exec web npm run user:password             # reimposta una password (prompt)
 docker compose exec web npm run user:password -- mario@esempio.it 'nuova-password'
@@ -347,6 +359,30 @@ docker compose exec web npm run user:password -- mario@esempio.it 'nuova-passwor
 
 > In alternativa puoi riattivare temporaneamente la registrazione: `ALLOW_REGISTRATION=true`
 > nel `.env` → `./scripts/update.sh` → registri → rimetti `false` → `./scripts/update.sh`.
+
+#### Configurazione Telegram (bot token + chat id)
+
+Serve per una futura funzione di invio del backup su Telegram. Bot token e chat id
+sono **cifrati nel database** (chiave `SECRETS_KEY` nel `.env`, vedi
+[Configurazione](#configurazione-env)) e gestiti **solo da CLI** (menu interattivo
+sopra, o il comando singolo sotto): non esiste alcuna schermata web né rotta API
+che li legge o li scrive, quindi servono accesso al server per configurarli.
+
+```bash
+# genera la chiave una sola volta, se non l'hai già fatto
+echo "SECRETS_KEY=$(openssl rand -hex 32)" >> .env
+docker compose up -d web        # o ./scripts/update.sh, per ricaricare il .env
+
+docker compose exec web npm run user:telegram -- mario@esempio.it set '<bot_token>' '<chat_id>'
+docker compose exec web npm run user:telegram -- mario@esempio.it show     # stato (chat id mascherato)
+docker compose exec web npm run user:telegram -- mario@esempio.it remove  # rimuove la configurazione
+```
+
+> ⚠️ Se `SECRETS_KEY` cambia (es. rigenerata per errore, o persa e ricreata in un
+> disastro), le credenziali Telegram già salvate non sono più decifrabili:
+> vanno reimpostate con `set`. Conserva `SECRETS_KEY` insieme a `JWT_SECRET`,
+> **fuori** dalla cartella `./backups` (i backup contengono le credenziali
+> cifrate, ma senza la chiave restano inutilizzabili anche a te).
 
 ---
 
@@ -525,7 +561,9 @@ soldi/
 │   │   ├── pool.js          # pool pg condiviso + helper transazioni
 │   │   ├── schema.sql       # schema idempotente (+ ALTER additivi per DB esistenti)
 │   │   └── migrate.js       # applica lo schema all'avvio
-│   ├── auth/                # hashing password, token di sessione, middleware
+│   ├── auth/                # hashing password, token di sessione, middleware, config Telegram
+│   ├── crypto/secrets.js    # cifratura AES-256-GCM per segreti salvati nel DB (SECRETS_KEY)
+│   ├── scripts/             # CLI: user:create/password/list/telegram/manage (docker compose exec web npm run …)
 │   ├── routes/              # auth, transactions, categories, accounts, recurring, planned, summary, savings, backups, settings
 │   ├── recurring/           # generate.js (movimenti dovuti) + scheduler.js (catch-up all'avvio + cron)
 │   ├── summary/savings.js   # modello del piano di risparmio (statistica pura)

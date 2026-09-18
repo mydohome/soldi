@@ -60,6 +60,9 @@ services:
       # Aggiornamento dall'app (Impostazioni → Aggiorna). true = attivo.
       # Richiede i mount qui sotto: fa `git pull` + riavvio, senza rebuild dell'immagine.
       SELF_UPDATE_ENABLED: ${SELF_UPDATE_ENABLED:-false}
+      # Cifra i segreti applicativi (credenziali Telegram) salvati nel DB.
+      # Necessaria solo per `npm run user:telegram`. openssl rand -hex 32
+      SECRETS_KEY: ${SECRETS_KEY:-}
     ports:
       # <indirizzo host>:<porta host>:<porta interna del container, fissa>.
       # BIND_ADDR=127.0.0.1 espone la porta solo a un reverse proxy sullo stesso

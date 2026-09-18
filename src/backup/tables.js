@@ -73,4 +73,10 @@ module.exports = [
     name: 'savings_settings',
     columns: ['user_id', 'emergency_months', 'emergency_split', 'updated_at'],
   },
+  {
+    // bot_token_enc/chat_id_enc sono già cifrati (vedi src/crypto/secrets.js):
+    // il CSV contiene solo ciphertext, illeggibile senza SECRETS_KEY.
+    name: 'telegram_settings',
+    columns: ['user_id', 'bot_token_enc', 'chat_id_enc', 'updated_at'],
+  },
 ];

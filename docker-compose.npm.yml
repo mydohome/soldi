@@ -83,6 +83,7 @@ services:
       RECURRING_CRON: ${RECURRING_CRON:-5 6 * * *}
       TZ: ${TZ:-Europe/Rome}
       SELF_UPDATE_ENABLED: ${SELF_UPDATE_ENABLED:-false}
+      SECRETS_KEY: ${SECRETS_KEY:-}
     volumes:
       - ./backups:/app/backups
       - .:/repo
