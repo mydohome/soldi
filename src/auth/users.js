@@ -5,13 +5,16 @@ const { query, withTransaction } = require('../db/pool');
 const defaultCategories = require('../data/default-categories');
 const defaultAccounts = require('../data/default-accounts');
 
-const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+// Login/identificativo utente: o un'email vera, o un nome utente semplice
+// (lettere, cifre, . _ % + -), senza spazi. Non inviamo mai email a questo
+// indirizzo, quindi non deve avere per forza un formato email valido.
+const IDENTIFIER_RE = /^[a-zA-Z0-9._%+-]+(@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,})?$/;
 
-function normalizeEmail(email) {
-  const e = String(email || '').trim().toLowerCase();
-  if (!EMAIL_RE.test(e) || e.length > 254) {
-    const err = new Error('Email non valida');
-    err.code = 'bad_email';
+function normalizeUsername(identifier) {
+  const e = String(identifier || '').trim().toLowerCase();
+  if (!IDENTIFIER_RE.test(e) || e.length < 2 || e.length > 254) {
+    const err = new Error('Nome utente o email non validi');
+    err.code = 'bad_username';
     throw err;
   }
   return e;
@@ -30,7 +33,7 @@ function checkPassword(password) {
  * registration route and by the `npm run user:create` CLI.
  */
 async function createUser({ email, password, displayName }) {
-  const mail = normalizeEmail(email);
+  const mail = normalizeUsername(email);
   checkPassword(password);
   const passwordHash = await bcrypt.hash(password, 12);
 
@@ -68,7 +71,7 @@ async function createUser({ email, password, displayName }) {
 
 /** Set (reset) a user's password. Returns the updated row or null if unknown. */
 async function setPassword(email, password) {
-  const mail = normalizeEmail(email);
+  const mail = normalizeUsername(email);
   checkPassword(password);
   const passwordHash = await bcrypt.hash(password, 12);
   const updated = await query(
@@ -78,4 +81,4 @@ async function setPassword(email, password) {
   return updated.rows[0] || null;
 }
 
-module.exports = { createUser, setPassword, normalizeEmail, checkPassword };
+module.exports = { createUser, setPassword, normalizeUsername, checkPassword };

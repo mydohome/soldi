@@ -33,7 +33,7 @@ async function pickUser() {
 
   if (choice === 'n') {
     try {
-      const email = await ask('Email: ');
+      const email = await ask('Email o nome utente: ');
       const password = await ask('Password (min 8 caratteri): ', { silent: true });
       const displayName = await ask('Nome (facoltativo): ');
       const user = await createUser({ email, password, displayName: displayName || undefined });

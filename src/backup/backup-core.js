@@ -18,6 +18,16 @@ function timestamp(d = new Date()) {
   return d.toISOString().replace(/[:.]/g, '-').replace('T', '_').slice(0, 19);
 }
 
+// Parte leggibile del nome della cartella di backup: la parte prima della @
+// (o l'intero identificativo, se non è un'email), pulita per essere un nome
+// di cartella sicuro. L'id resta comunque nel prefisso (userBackupPrefix) per
+// garantire l'unicità: due utenti possono avere la stessa parte locale con
+// domini diversi.
+function usernameSlug(email) {
+  const local = String(email || '').split('@')[0] || 'utente';
+  return local.toLowerCase().replace(/[^a-z0-9._-]/g, '-').slice(0, 40) || 'utente';
+}
+
 function writeTableCsv(dir, table, rows) {
   const csv = stringify(rows, {
     header: true,
@@ -74,7 +84,7 @@ async function createBackup({ root = BACKUP_ROOT, keep = KEEP, label = 'auto' } 
  */
 async function createUserBackup({ userId, email, root = BACKUP_ROOT, keep = KEEP, label = 'manual' }) {
   fs.mkdirSync(root, { recursive: true });
-  const dirName = `soldi-user-backup-${userId}-${timestamp()}`;
+  const dirName = `${userBackupPrefix(userId)}${usernameSlug(email)}-${timestamp()}`;
   const dir = path.join(root, dirName);
   fs.mkdirSync(dir);
 

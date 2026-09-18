@@ -8,15 +8,15 @@
 
 require('dotenv').config();
 const { pool, query } = require('../db/pool');
-const { normalizeEmail } = require('../auth/users');
+const { normalizeUsername } = require('../auth/users');
 const { confirm } = require('../backup/confirm');
 const { resolveUserBackupDir, readManifest, restoreUserBackup } = require('../backup/restore-user');
 
 (async () => {
   try {
     const email = process.argv[2];
-    if (!email) throw new Error('Uso: npm run user:restore -- <email> [--latest|nome-cartella]');
-    const mail = normalizeEmail(email);
+    if (!email) throw new Error('Uso: npm run user:restore -- <email o nome utente> [--latest|nome-cartella]');
+    const mail = normalizeUsername(email);
     const { rows } = await query('SELECT id, email FROM users WHERE email = $1', [mail]);
     if (!rows[0]) throw new Error(`Nessun utente con email ${mail}`);
     const userId = rows[0].id;

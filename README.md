@@ -33,7 +33,7 @@ Funziona da smartphone e da desktop (interfaccia responsive), gira interamente c
 
 | | |
 |---|---|
-| 👤 **Account** | Registrazione con email + password (hash `bcrypt`), sessione via cookie firmato `httpOnly`. Rate limiting sui tentativi di login. |
+| 👤 **Account** | Registrazione con email o nome utente + password (hash `bcrypt`), sessione via cookie firmato `httpOnly`. Rate limiting sui tentativi di login. |
 | 💰 **Movimenti** | Entrate e uscite con importo, data, descrizione, categoria, **conto** e **ambito** (personale / casa). Ricerca testo, filtri, **annulla** dopo l'eliminazione. |
 | ✨ **Suggerimenti** | Inserendo un movimento l'app propone descrizione, categoria e conto in base allo storico (nessun servizio esterno). |
 | 🏷️ **Categorie** | Personalizzabili per colore, tipo (spesa/entrata) e **ambito (Personale/Casa)** — separate nella schermata Categorie e nei filtri dei form. 11 categorie predefinite alla registrazione. |
@@ -321,6 +321,10 @@ In NPM: **Forward Hostname** `<IP_DEL_SERVER_SOLDI>`, **Forward Port** `3010`,
 
 ## Gestione utenti
 
+Come login puoi usare un'**email o un nome utente semplice** (es. `mario`): l'app non
+invia mai email, quindi non deve avere per forza un formato email valido — basta senza
+spazi. Vale sia in registrazione/login dal browser sia in tutti i comandi qui sotto.
+
 **Primo utente (installazione nuova):** finché non esiste alcun account la schermata di
 login mostra comunque «Crea account», anche con `ALLOW_REGISTRATION=false`. Registra il tuo
 account lì.
@@ -396,13 +400,15 @@ Diverso dal [backup globale](#backup-automatico) (tutte le tabelle, tutti gli
 utenti insieme, pensato per il disastro totale): questo esporta/reimporta
 **solo i dati di un utente** — categorie, conti, spese fisse, voci previste,
 movimenti, risparmio e configurazione Telegram — senza toccare gli altri
-utenti. Utile prima di una modifica rischiosa sui dati di una sola persona, o
-come base per un futuro invio del backup su Telegram.
+utenti. Viene creato anche automaticamente ogni settimana per ogni utente
+(vedi [Backup automatico](#backup-automatico)); i comandi sotto servono per
+farlo a mano — utile prima di una modifica rischiosa sui dati di una sola
+persona, o come base per un futuro invio del backup su Telegram.
 
 ```bash
-docker compose exec web npm run user:backup -- mario@esempio.it
-docker compose exec web npm run user:restore -- mario@esempio.it --latest
-docker compose exec web npm run user:restore -- mario@esempio.it soldi-user-backup-3-2026-01-05_03-00-00
+docker compose exec web npm run user:backup -- mario
+docker compose exec web npm run user:restore -- mario --latest
+docker compose exec web npm run user:restore -- mario soldi-user-backup-3-mario-2026-01-05_03-00-00
 ```
 
 Anche dal [menu interattivo](#menu-interattivo-consigliato) (`user:manage`),
@@ -412,9 +418,10 @@ altri utenti, quindi non si possono riusare quelli del backup — i collegamenti
 interni (movimento → categoria/conto/spesa fissa) restano corretti, li
 aggiorna automaticamente. I backup personali vivono nella stessa cartella
 `./backups` di quelli globali, con un nome distinto
-(`soldi-user-backup-<id>-<timestamp>`); ne vengono conservati gli ultimi
-`BACKUP_KEEP` per utente, indipendentemente dai backup globali o degli altri
-utenti.
+(`soldi-user-backup-<id>-<nome utente>-<timestamp>` — l'id resta nel nome per
+garantire l'unicità anche se due utenti hanno la stessa parte prima della @);
+ne vengono conservati gli ultimi `BACKUP_KEEP` per utente, indipendentemente
+dai backup globali o degli altri utenti.
 
 ---
 
@@ -441,7 +448,9 @@ ricarica, oppure togli e riaggiungi l'icona alla Home.)
 
 ## Backup automatico
 
-Ogni settimana (default: **domenica alle 03:00**, fuso `TZ`) l'app scrive un backup in:
+Ogni settimana (default: **domenica alle 03:00**, fuso `TZ`) l'app scrive un backup
+**globale** (tutte le tabelle, tutti gli utenti insieme — per il disastro totale, vedi
+[Ripristino di emergenza](#ripristino-di-emergenza-disaster-recovery)) in:
 
 ```
 /app/backups/soldi-backup-<AAAA-MM-GG_hh-mm-ss>/
@@ -452,21 +461,28 @@ Ogni settimana (default: **domenica alle 03:00**, fuso `TZ`) l'app scrive un bac
 ├── planned_expenses.csv
 ├── transactions.csv
 ├── savings_settings.csv
+├── telegram_settings.csv
 └── manifest.json
 ```
+
+Subito dopo scrive anche un backup **per ogni utente registrato** (solo i suoi dati —
+vedi [Backup e ripristino per singolo utente](#backup-e-ripristino-per-singolo-utente)) in
+`soldi-user-backup-<id>-<nome utente>-<timestamp>/`.
 
 Questa cartella è montata sul tuo computer in **`./backups`** (vedi `docker-compose.yml`),
 quindi i file CSV sono subito accessibili e copiabili altrove (disco esterno, cloud…).
 
-Vengono conservati gli ultimi `BACKUP_KEEP` backup; i più vecchi sono eliminati automaticamente.
+Vengono conservati gli ultimi `BACKUP_KEEP` backup globali, e gli ultimi `BACKUP_KEEP` per
+ogni singolo utente; i più vecchi sono eliminati automaticamente.
 
 **Backup manuale** da terminale:
 
 ```bash
-docker compose exec web npm run backup
+docker compose exec web npm run backup                        # globale
+docker compose exec web npm run user:backup -- mario           # solo un utente
 ```
 
-o dal pulsante **Crea backup adesso** nella sezione *Backup* dell'app.
+o dal pulsante **Crea backup adesso** nella sezione *Backup* dell'app (backup globale).
 
 > Consiglio: copia periodicamente l'intera cartella `./backups` fuori dalla macchina.
 > Il backup CSV è indipendente dal volume del database: se perdi il volume, i CSV bastano

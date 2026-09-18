@@ -2,7 +2,7 @@
 
 // Reimposta la password di un utente esistente.
 //   docker compose exec web npm run user:password
-//   docker compose exec web npm run user:password -- email@esempio.it 'nuova-password'
+//   docker compose exec web npm run user:password -- mario 'nuova-password'
 
 require('dotenv').config();
 const { pool } = require('../db/pool');
@@ -12,7 +12,7 @@ const { ask } = require('./prompt');
 (async () => {
   try {
     const scripted = process.argv.length > 2;
-    const email = process.argv[2] || (await ask('Email: '));
+    const email = process.argv[2] || (await ask('Email o nome utente: '));
     const password =
       process.argv[3] || (scripted ? '' : await ask('Nuova password (min 8 caratteri): ', { silent: true }));
 

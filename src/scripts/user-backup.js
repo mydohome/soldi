@@ -6,14 +6,14 @@
 
 require('dotenv').config();
 const { pool, query } = require('../db/pool');
-const { normalizeEmail } = require('../auth/users');
+const { normalizeUsername } = require('../auth/users');
 const { createUserBackup } = require('../backup/backup-core');
 
 (async () => {
   try {
     const email = process.argv[2];
-    if (!email) throw new Error('Uso: npm run user:backup -- <email>');
-    const mail = normalizeEmail(email);
+    if (!email) throw new Error('Uso: npm run user:backup -- <email o nome utente>');
+    const mail = normalizeUsername(email);
     const { rows } = await query('SELECT id, email FROM users WHERE email = $1', [mail]);
     if (!rows[0]) throw new Error(`Nessun utente con email ${mail}`);
 

@@ -21,8 +21,11 @@ const authLimiter = rateLimit({
   message: { error: 'too_many_attempts' },
 });
 
+// L'identificativo di login può essere un'email o un nome utente semplice
+// (non inviamo mai email a questo indirizzo) — il formato esatto è verificato
+// da normalizeUsername() dentro createUser(); qui solo una lunghezza sana.
 const credentials = z.object({
-  email: z.string().trim().toLowerCase().email().max(254),
+  email: z.string().trim().toLowerCase().min(1).max(254),
   password: z.string().min(8, 'La password deve avere almeno 8 caratteri').max(200),
   displayName: z.string().trim().max(80).optional(),
 });
@@ -30,7 +33,7 @@ const credentials = z.object({
 // Login must not leak the password policy — accept any non-empty string and let
 // the credential check fail with a generic 401.
 const loginInput = z.object({
-  email: z.string().trim().toLowerCase().email().max(254),
+  email: z.string().trim().toLowerCase().min(1).max(254),
   password: z.string().min(1).max(200),
 });
 
@@ -69,6 +72,9 @@ router.post(
       user = await createUser({ email, password, displayName });
     } catch (err) {
       if (err.code === 'email_taken') throw httpError(409, 'email_taken', err.message);
+      if (err.code === 'bad_username' || err.code === 'bad_password') {
+        throw httpError(400, err.code, err.message);
+      }
       throw err;
     }
 
