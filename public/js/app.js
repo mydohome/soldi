@@ -1808,13 +1808,15 @@ async function viewImpostazioni(main) {
 
       <div class="card card-pad">
         <p class="muted" style="font-size:.9rem">
-          Un backup automatico viene creato ogni <strong>domenica alle 03:00</strong> nella cartella
+          Un backup dei <strong>tuoi dati</strong> viene creato automaticamente ogni
+          <strong>domenica alle 03:00</strong> nella cartella
           <span class="mono">${escapeHtml(payload.dir)}</span> del container, montata sul tuo computer in <span class="mono">./backups</span>.
-          Vengono conservati gli ultimi 8 backup.
+          Vengono conservati gli ultimi 8. Il backup completo dell'installazione (tutti gli utenti,
+          per un disastro totale) non è gestibile da qui: resta solo da terminale sul server.
         </p>
       </div>
 
-      <h2 class="section-title">Backup disponibili</h2>
+      <h2 class="section-title">I tuoi backup</h2>
       <div class="card" id="bk-list">
         ${
           payload.backups.length
@@ -1836,17 +1838,21 @@ async function viewImpostazioni(main) {
         }
       </div>
 
-      <h2 class="section-title">Ripristino in caso di disastro</h2>
+      <h2 class="section-title">Ripristino dei tuoi dati</h2>
       <div class="card card-pad">
         <p class="muted" style="font-size:.9rem;margin-bottom:10px">
-          Il ripristino <strong>sostituisce tutti i dati</strong> con quelli del backup scelto. Si esegue da terminale:
+          Il ripristino <strong>sostituisce i tuoi dati</strong> con quelli del backup scelto — gli
+          altri utenti non vengono toccati. Si esegue da terminale sul server:
         </p>
-        <code class="block"># ripristina il backup più recente
-docker compose run --rm web npm run restore -- --latest --yes
+        <code class="block"># ripristina il tuo backup più recente
+docker compose exec web npm run user:restore -- ${escapeHtml(state.user?.email || '')} --latest
 
-# oppure un backup specifico
-docker compose run --rm web npm run restore -- /app/backups/NOME_BACKUP --yes</code>
-        <p class="muted" style="font-size:.85rem">La procedura completa è nel README, sezione «Ripristino di emergenza».</p>
+# oppure un backup specifico (il nome è tra quelli qui sopra)
+docker compose exec web npm run user:restore -- ${escapeHtml(state.user?.email || '')} NOME_BACKUP</code>
+        <p class="muted" style="font-size:.85rem">
+          Dettagli nel README, sezione «Backup e ripristino per singolo utente». Per un disastro
+          totale (server perso) vedi «Ripristino di emergenza» — anche quello si gestisce solo dal server.
+        </p>
       </div>
 
       <h2 class="section-title">Account</h2>
