@@ -81,6 +81,17 @@ CREATE TABLE IF NOT EXISTS savings_settings (
   updated_at       TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
+-- Integrazione Telegram (bot token + chat id) per l'invio del backup.
+-- Valori cifrati a livello applicativo (src/crypto/secrets.js, chiave
+-- SECRETS_KEY nel .env) — gestita solo da `npm run user:telegram`, mai da
+-- una rotta HTTP.
+CREATE TABLE IF NOT EXISTS telegram_settings (
+  user_id       BIGINT PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
+  bot_token_enc TEXT NOT NULL,
+  chat_id_enc   TEXT NOT NULL,
+  updated_at    TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
 CREATE TABLE IF NOT EXISTS transactions (
   id                BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
   user_id           BIGINT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
