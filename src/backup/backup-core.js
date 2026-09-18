@@ -14,8 +14,11 @@ const KEEP = Number(process.env.BACKUP_KEEP || 8);
 // il backup/ripristino per-utente (vedi restore-user.js).
 const USER_SCOPED_TABLES = TABLES.filter((t) => t.columns.includes('user_id'));
 
+// Millisecondi inclusi (non solo i secondi) per evitare che due backup dello
+// stesso utente nello stesso secondo (due chiamate CLI ravvicinate, o un cron
+// e una chiamata manuale che si sovrappongono) finiscano nella stessa cartella.
 function timestamp(d = new Date()) {
-  return d.toISOString().replace(/[:.]/g, '-').replace('T', '_').slice(0, 19);
+  return d.toISOString().replace(/[:.]/g, '-').replace('T', '_').slice(0, 23);
 }
 
 // Parte leggibile del nome della cartella di backup: la parte prima della @
