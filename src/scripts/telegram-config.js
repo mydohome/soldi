@@ -9,7 +9,7 @@
 //   docker compose exec web npm run user:telegram -- mario@esempio.it show
 //   docker compose exec web npm run user:telegram -- mario@esempio.it remove
 //
-// Senza argomenti dopo l'email chiede tutto a prompt.
+// Senza argomenti dopo l'email/nome utente chiede tutto a prompt.
 
 require('dotenv').config();
 const { pool } = require('../db/pool');
@@ -18,7 +18,7 @@ const { ask } = require('./prompt');
 
 (async () => {
   try {
-    const email = process.argv[2] || (await ask('Email: '));
+    const email = process.argv[2] || (await ask('Email o nome utente: '));
     const action = (process.argv[3] || (await ask('Azione (set/show/remove): '))).trim().toLowerCase();
 
     if (action === 'set') {

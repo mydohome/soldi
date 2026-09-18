@@ -2,7 +2,7 @@
 
 const { query } = require('../db/pool');
 const { encrypt, decrypt } = require('../crypto/secrets');
-const { normalizeEmail } = require('./users');
+const { normalizeUsername } = require('./users');
 
 /** Mostra solo le ultime 4 cifre/caratteri, mai il valore intero. */
 function mask(value) {
@@ -11,7 +11,7 @@ function mask(value) {
 }
 
 async function findUser(email) {
-  const mail = normalizeEmail(email);
+  const mail = normalizeUsername(email);
   const { rows } = await query('SELECT id, email FROM users WHERE email = $1', [mail]);
   if (!rows[0]) {
     const err = new Error(`Nessun utente con email ${mail}`);

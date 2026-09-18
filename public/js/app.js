@@ -182,8 +182,8 @@ async function renderAuth() {
         ? `<div class="field"><label for="name">Nome</label><input id="name" name="displayName" autocomplete="name" placeholder="Come ti chiami" /></div>`
         : '') +
       `<div class="field">
-         <label for="email">Email</label>
-         <input id="email" name="email" type="email" required autocomplete="email" placeholder="tu@esempio.it" />
+         <label for="email">Email o nome utente</label>
+         <input id="email" name="email" type="text" required autocomplete="username" placeholder="tu@esempio.it o mario" />
        </div>
        <div class="field">
          <label for="password">Password</label>
