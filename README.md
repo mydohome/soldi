@@ -330,6 +330,12 @@ account lì.
 > Se usi `docker-compose.npm.yml`, premetti a ogni comando
 > `COMPOSE_FILE=docker-compose.npm.yml` (oppure aggiungi `-f docker-compose.npm.yml`).
 
+> `manage-users.sh` e `disaster-recovery.sh` vanno lanciati dalla cartella dove sta
+> `docker-compose.yml`, non necessariamente da quella dello script: se il checkout
+> git vive in una sottocartella separata (es. `~/docker/soldi/` con dentro
+> `docker-compose.yml`/`.env` e `~/docker/soldi/app/` col codice), vai in
+> `~/docker/soldi/` e lancia `./app/scripts/manage-users.sh`.
+
 Ogni utente ha i propri movimenti, categorie e conti, completamente separati.
 
 ### Menu interattivo (consigliato)

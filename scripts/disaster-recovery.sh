@@ -14,14 +14,17 @@
 #
 # Da qui in poi lo script crea lo schema, ripristina i dati e avvia l'app.
 #
+# Va eseguito dalla cartella dove sta docker-compose.yml (non dalla cartella
+# dello script stesso: se il checkout git vive in una sottocartella separata
+# — es. ~/docker/soldi/ con dentro docker-compose.yml/.env e ~/docker/soldi/app/
+# col codice — vai in ~/docker/soldi/ e lancia ./app/scripts/disaster-recovery.sh).
+#
 # Uso:
 #   ./scripts/disaster-recovery.sh                  # backup più recente
 #   ./scripts/disaster-recovery.sh --latest
 #   ./scripts/disaster-recovery.sh soldi-backup-2026-01-05_03-00-00
 #
 set -euo pipefail
-
-cd "$(dirname "$0")/.."
 
 c_info='\033[1;36m'; c_ok='\033[1;32m'; c_err='\033[1;31m'; c_off='\033[0m'
 log()  { printf "\n${c_info}▸ %s${c_off}\n" "$1"; }
@@ -33,8 +36,10 @@ die()  { printf "\n${c_err}✗ %s${c_off}\n" "$1" >&2; exit 1; }
 # COMPOSE_FILE (variabile standard di docker compose) permette di usare un file
 # alternativo, es.  COMPOSE_FILE=docker-compose.npm.yml ./scripts/disaster-recovery.sh
 if [ -z "${COMPOSE_FILE:-}" ] && [ ! -f docker-compose.yml ]; then
-  die "docker-compose.yml non trovato. Esegui lo script dalla cartella del progetto,
-   oppure imposta COMPOSE_FILE=<file> se usi un compose alternativo."
+  die "docker-compose.yml non trovato nella cartella corrente ($(pwd)).
+   Vai nella cartella dove sta docker-compose.yml (non necessariamente quella
+   dello script) prima di lanciarlo, oppure imposta COMPOSE_FILE=<file> se usi
+   un compose alternativo."
 fi
 [ -f .env ] || die "File .env mancante: crealo da .env.example prima di continuare."
 
