@@ -49,6 +49,7 @@ Funziona da smartphone e da desktop (interfaccia responsive), gira interamente c
 | ⬆️ **Aggiornamento dall'app** | In **Impostazioni**: controlla e installa l'ultima versione da git (`SELF_UPDATE_ENABLED=true`). |
 | ♻️ **Ripristino** | Comando singolo che ricarica i dati da un backup CSV. |
 | 🎨 **UI** | Design moderno, tema chiaro/scuro automatico, elementi grafici originali. |
+| 📖 **Guida in-app** | In **Impostazioni → Guida**: come aggiungere movimenti e gestire categorie, conti e spese fisse, con screenshot delle schermate. |
 
 ---
 
