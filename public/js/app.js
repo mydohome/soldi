@@ -244,6 +244,7 @@ const NAV = [
 const SETTINGS_LINKS = [
   { id: 'categorie', label: 'Categorie', desc: 'Colore, tipo e ambito delle voci', icon: icons.tag },
   { id: 'conti', label: 'Conti', desc: 'Contanti, conto corrente, carta…', icon: icons.bank },
+  { id: 'guida', label: 'Guida', desc: 'Come usare l’app, passo per passo', icon: icons.book },
 ];
 const SETTINGS_GROUP = ['impostazioni', ...SETTINGS_LINKS.map((s) => s.id)];
 
@@ -311,6 +312,7 @@ function renderView() {
     fisse: viewSpeseFisse,
     categorie: viewCategorie,
     conti: viewConti,
+    guida: viewGuida,
     impostazioni: viewImpostazioni,
   }[state.view])(main);
 }
@@ -1749,6 +1751,65 @@ function openAccountModal(acc = null, onChange) {
       btn.disabled = false;
     }
   });
+}
+
+/* ------------------------------------------------------------------ guida */
+const GUIDE_STEPS = [
+  {
+    title: 'Aggiungere un movimento',
+    body: `Premi <strong>Aggiungi</strong> in cima a «Movimenti» (o il pulsante <span class="guide-inline-icon">${icons.plus}</span> in basso a destra, da qualsiasi schermata) per registrare un'entrata o un'uscita. Scegli tipo e ambito con gli interruttori in alto, poi compila descrizione, importo, data, categoria e conto.`,
+    shots: [
+      { src: '/img/guide/movimenti.png', alt: 'Elenco dei movimenti con entrate e uscite' },
+      { src: '/img/guide/nuovo-movimento.png', alt: 'Form per aggiungere un nuovo movimento' },
+    ],
+  },
+  {
+    title: 'Gestire le categorie',
+    body: `In «Impostazioni → Categorie» trovi le voci con cui classifichi spese ed entrate, separate per ambito (Personale / Casa). Premi <strong>Nuova</strong> per crearne una, scegliendo nome, tipo, colore e ambito; usa le icone a fianco di ogni voce per modificarla o eliminarla.`,
+    shots: [
+      { src: '/img/guide/categorie.png', alt: 'Elenco delle categorie di spesa e di entrata' },
+      { src: '/img/guide/nuova-categoria.png', alt: 'Form per creare una nuova categoria' },
+    ],
+  },
+  {
+    title: 'Gestire i conti',
+    body: `In «Impostazioni → Conti» gestisci i conti a cui puoi associare i movimenti (contanti, conto corrente, carta…). Premi <strong>Nuovo</strong> per aggiungerne uno, oppure modifica o elimina quelli esistenti dalla lista.`,
+    shots: [{ src: '/img/guide/conti.png', alt: 'Elenco dei conti configurati' }],
+  },
+  {
+    title: 'Gestire le spese fisse',
+    body: `In «Spese fisse» crei regole ricorrenti (affitto, abbonamenti, stipendio…) che generano automaticamente un movimento ogni mese, o una volta l'anno, il giorno indicato. Disattivando una regola smette di generare movimenti senza cancellare lo storico; i movimenti che genera hanno il badge «fissa».`,
+    shots: [
+      { src: '/img/guide/spese-fisse.png', alt: 'Elenco delle spese fisse configurate' },
+      { src: '/img/guide/nuova-spesa-fissa.png', alt: 'Form per creare una nuova spesa fissa' },
+    ],
+  },
+];
+
+async function viewGuida(main) {
+  main.innerHTML = '';
+  main.appendChild(
+    h(`
+    <div>
+      <a class="back-link" href="#/impostazioni">${icons.chevronL}Impostazioni</a>
+      <div class="page-head">
+        <div><h1>Guida</h1><p>Come usare l'app, passo per passo</p></div>
+      </div>
+      ${GUIDE_STEPS.map(
+        (step, i) => `
+        <h2 class="section-title">${i + 1}. ${escapeHtml(step.title)}</h2>
+        <div class="card card-pad guide-step">
+          <p class="muted" style="font-size:.92rem;line-height:1.5;margin-bottom:14px">${step.body}</p>
+          <div class="guide-shots">
+            ${step.shots
+              .map((s) => `<img class="guide-shot" src="${s.src}" alt="${escapeHtml(s.alt)}" loading="lazy" />`)
+              .join('')}
+          </div>
+        </div>`
+      ).join('')}
+    </div>
+  `)
+  );
 }
 
 /* ------------------------------------------------------------------ impostazioni */
