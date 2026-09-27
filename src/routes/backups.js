@@ -3,11 +3,12 @@
 const path = require('path');
 const express = require('express');
 const rateLimit = require('express-rate-limit');
+const { z } = require('zod');
 
 const { requireAuth } = require('../auth/middleware');
-const { handler } = require('../http/validate');
+const { handler, httpError } = require('../http/validate');
 const { createUserBackup, listUserBackups, BACKUP_ROOT } = require('../backup/backup-core');
-const { readManifest } = require('../backup/restore-user');
+const { readManifest, restoreUserBackup } = require('../backup/restore-user');
 
 const router = express.Router();
 router.use(requireAuth);
@@ -22,6 +23,18 @@ const backupLimiter = rateLimit({
   legacyHeaders: false,
   keyGenerator: (req) => String(req.user.id),
   message: { error: 'too_many_requests', message: 'Aspetta qualche secondo prima di creare un altro backup.' },
+});
+
+// Il ripristino sovrascrive tutti i dati dell'utente: un limite più permissivo
+// del backup (che gira anche da cron) serve solo a evitare doppi invii/abusi,
+// non a proteggere una risorsa costosa.
+const restoreLimiter = rateLimit({
+  windowMs: 60 * 1000,
+  max: 3,
+  standardHeaders: true,
+  legacyHeaders: false,
+  keyGenerator: (req) => String(req.user.id),
+  message: { error: 'too_many_requests', message: 'Troppi ripristini in poco tempo. Riprova tra qualche minuto.' },
 });
 
 // Solo i backup DELL'UTENTE LOGGATO: il backup globale (tutti gli utenti
@@ -55,6 +68,22 @@ router.post(
   handler(async (req, res) => {
     const dir = await createUserBackup({ userId: req.user.id, email: req.user.email, label: 'manual' });
     res.status(201).json({ created: path.basename(dir) });
+  })
+);
+
+// Il nome deve corrispondere esattamente a uno dei backup DELL'UTENTE LOGGATO
+// (mai un path fornito dal client): esclude sia il path traversal sia il
+// ripristino del backup di un altro utente (IDOR).
+router.post(
+  '/:name/restore',
+  restoreLimiter,
+  handler(async (req, res) => {
+    const name = z.string().min(1).max(200).parse(req.params.name);
+    if (!listMyBackups(req.user.id).some((b) => b.name === name)) {
+      throw httpError(404, 'not_found', 'Backup non trovato');
+    }
+    const restored = await restoreUserBackup({ userId: req.user.id, dir: path.join(BACKUP_ROOT, name) });
+    res.json({ restored });
   })
 );
 

@@ -45,7 +45,7 @@ Funziona da smartphone e da desktop (interfaccia responsive), gira interamente c
 | 📱 **Installabile** | PWA: da iPhone/Android *Aggiungi a Home* e si apre a tutto schermo con icona propria. |
 | 📊 **Riepiloghi** | Totali entrate / uscite / saldo per **giorno**, **settimana** (lun–dom) e **mese**, con navigazione avanti/indietro. Tocca un box per l'elenco dei movimenti di quel periodo. |
 | 📈 **Grafici** | Donut per categoria (con confronto ▲▼ rispetto alla media di 3 mesi) e barre entrate/uscite. SVG originali, nessuna libreria esterna. |
-| 🗄️ **Backup** | CSV automatico ogni settimana + backup manuale on‑demand (in **Impostazioni**). |
+| 🗄️ **Backup** | CSV automatico ogni settimana + backup manuale on‑demand, **e ripristino**, tutto in **Impostazioni** — ogni utente sui propri dati. |
 | ⬆️ **Aggiornamento dall'app** | In **Impostazioni**: controlla e installa l'ultima versione da git (`SELF_UPDATE_ENABLED=true`). |
 | ♻️ **Ripristino** | Comando singolo che ricarica i dati da un backup CSV. |
 | 🎨 **UI** | Design moderno, tema chiaro/scuro automatico, elementi grafici originali. |
@@ -403,9 +403,13 @@ utenti insieme, pensato per il disastro totale): questo esporta/reimporta
 **solo i dati di un utente** — categorie, conti, spese fisse, voci previste,
 movimenti, risparmio e configurazione Telegram — senza toccare gli altri
 utenti. Viene creato anche automaticamente ogni settimana per ogni utente
-(vedi [Backup automatico](#backup-automatico)); i comandi sotto servono per
-farlo a mano — utile prima di una modifica rischiosa sui dati di una sola
-persona, o come base per un futuro invio del backup su Telegram.
+(vedi [Backup automatico](#backup-automatico)).
+
+Ogni utente vede i **propri** backup (automatici e manuali) e può ripristinarli
+da solo, dall'app, in **Impostazioni → I tuoi backup → Ripristina** accanto al
+backup scelto — non serve accedere al server. I comandi da terminale restano
+utili solo per un intervento dell'amministratore (es. un utente bloccato fuori
+dall'app) o per scriptare un backup a mano:
 
 ```bash
 docker compose exec web npm run user:backup -- mario
