@@ -1878,13 +1878,18 @@ async function viewImpostazioni(main) {
       </div>
 
       <h2 class="section-title">I tuoi backup</h2>
+      <p class="muted" style="font-size:.85rem;margin:-8px 0 10px">
+        Il ripristino <strong>sostituisce tutti i tuoi dati</strong> con quelli del backup scelto —
+        gli altri utenti non vengono toccati. Un disastro totale (server perso) resta gestito
+        dall'amministratore da terminale.
+      </p>
       <div class="card" id="bk-list">
         ${
           payload.backups.length
             ? payload.backups
                 .map(
                   (b) => `
-          <div class="cat-row">
+          <div class="cat-row" data-name="${escapeHtml(b.name)}">
             <span class="dot" style="background:var(--brand)"></span>
             <div class="meta">
               <div class="name mono">${escapeHtml(b.name)}</div>
@@ -1892,28 +1897,14 @@ async function viewImpostazioni(main) {
                     b.label || 'auto'
                   }${b.tables ? ` · ${b.tables.transactions?.rows ?? 0} movimenti` : ''}</div>
             </div>
+            <div class="row-tail">
+              <button class="btn ghost restore-bk" type="button">${icons.restore}<span>Ripristina</span></button>
+            </div>
           </div>`
                 )
                 .join('')
             : '<div class="cat-row muted">Ancora nessun backup. Creane uno con il pulsante qui sopra.</div>'
         }
-      </div>
-
-      <h2 class="section-title">Ripristino dei tuoi dati</h2>
-      <div class="card card-pad">
-        <p class="muted" style="font-size:.9rem;margin-bottom:10px">
-          Il ripristino <strong>sostituisce i tuoi dati</strong> con quelli del backup scelto — gli
-          altri utenti non vengono toccati. Si esegue da terminale sul server:
-        </p>
-        <code class="block"># ripristina il tuo backup più recente
-docker compose exec web npm run user:restore -- ${escapeHtml(state.user?.email || '')} --latest
-
-# oppure un backup specifico (il nome è tra quelli qui sopra)
-docker compose exec web npm run user:restore -- ${escapeHtml(state.user?.email || '')} NOME_BACKUP</code>
-        <p class="muted" style="font-size:.85rem">
-          Dettagli nel README, sezione «Backup e ripristino per singolo utente». Per un disastro
-          totale (server perso) vedi «Ripristino di emergenza» — anche quello si gestisce solo dal server.
-        </p>
       </div>
 
       <h2 class="section-title">Account</h2>
@@ -1938,6 +1929,29 @@ docker compose exec web npm run user:restore -- ${escapeHtml(state.user?.email |
       e.target.disabled = false;
     }
   });
+
+  main.querySelectorAll('.restore-bk').forEach((btn) =>
+    btn.addEventListener('click', async () => {
+      const name = btn.closest('.cat-row').dataset.name;
+      if (
+        !confirm(
+          `Ripristinare il backup «${name}»?\n\nTutti i tuoi dati attuali (movimenti, categorie, conti, spese fisse) verranno sostituiti con quelli del backup. L'operazione non è reversibile.`
+        )
+      )
+        return;
+      btn.disabled = true;
+      try {
+        await api.post(`/api/backups/${encodeURIComponent(name)}/restore`);
+        state._categories = null;
+        state._accounts = null;
+        toast('Ripristino completato');
+        viewImpostazioni(main);
+      } catch (ex) {
+        toast(ex.message, 'error');
+        btn.disabled = false;
+      }
+    })
+  );
 
   const statusEl = main.querySelector('#update-status');
   const doBtn = main.querySelector('#do-update');
