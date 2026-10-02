@@ -513,6 +513,12 @@ verifica: `./scripts/disaster-recovery.sh`. Vedi i dettagli più sotto.
 docker compose run --rm web npm run restore -- --latest --yes
 ```
 
+`npm run restore` ripristina solo un **backup globale valido** e rifiuta, senza toccare i dati:
+un backup personale (`soldi-user-backup-…`, da ripristinare con `user:restore`), una cartella
+senza `users.csv` o con `users.csv` vuoto (per esempio `/app/backups` indicata per errore).
+Prima della conferma stampa le righe che troverà in ogni CSV; se i CSV non corrispondono al
+`manifest.json` (file troncato o mancante) il ripristino torna indietro e i dati restano intatti.
+
 ### Scenario B — hai perso tutto (volume incluso), hai solo la cartella ./backups
 
 ```bash
