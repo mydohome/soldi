@@ -47,6 +47,7 @@ Funziona da smartphone e da desktop (interfaccia responsive), gira interamente c
 | 📈 **Grafici** | Donut per categoria (con confronto ▲▼ rispetto alla media di 3 mesi) e barre entrate/uscite. SVG originali, nessuna libreria esterna. |
 | 🗄️ **Backup** | CSV automatico ogni settimana + backup manuale on‑demand, **e ripristino**, tutto in **Impostazioni** — ogni utente sui propri dati. |
 | ⬆️ **Aggiornamento dall'app** | In **Impostazioni**, solo per l'**amministratore** (il primo utente creato, o `ADMIN_EMAIL`): controlla e installa l'ultima versione da git (`SELF_UPDATE_ENABLED=true`). |
+| 📤 **Esportazione** | Dalla vista Movimenti, **Esporta** in **Excel (.xlsx)** o **CSV** con i filtri attivi (periodo, tipo, categoria, conto, ambito, ricerca). Solo i tuoi dati, fino a 50.000 righe. |
 | ♻️ **Ripristino** | Comando singolo che ricarica i dati da un backup CSV. |
 | 🎨 **UI** | Design moderno, tema chiaro/scuro automatico, elementi grafici originali. |
 | 📖 **Guida in-app** | In **Impostazioni → Guida**: come aggiungere movimenti e gestire categorie, conti e spese fisse, con screenshot delle schermate. |
@@ -309,6 +310,16 @@ In NPM: **Forward Hostname** `<IP_DEL_SERVER_SOLDI>`, **Forward Port** `3010`,
   generati hanno il badge «fissa» e restano modificabili. All'avvio l'app recupera i
   mesi/anni arretrati (utile dopo un fermo del server); riattivando una regola **non** si
   recuperano i periodi in cui era spenta.
+- **Movimenti → Esporta** — scarica i movimenti con i filtri della vista (senza periodo: tutti, fino
+  a 50.000). **Excel**: foglio «Movimenti» (Data, Tipo, Importo, Categoria, Conto, Ambito, Nota, Netto,
+  Spesa fissa; date e importi veri, intestazione bloccata, filtro automatico) e foglio «Info» con
+  filtri applicati e numero di righe. **CSV**: separatore `;`, UTF-8 con BOM, virgola decimale, celle
+  che iniziano con `= + - @` precedute da `'` per evitare formule. Se superi il tetto restringi il
+  periodo.
+  > **Aggiornamento:** l'esportazione Excel richiede la libreria `exceljs`, che sta nell'immagine
+  > Docker. Questa versione richiede quindi la **ricostruzione dell'immagine**: usa
+  > `./scripts/update.sh` (lo fa) e non il pulsante Aggiorna dell'app. Finché l'immagine non è
+  > ricostruita l'esportazione Excel risponde con un avviso e **il CSV funziona comunque**.
 - **Categorie** — crea, rinomina, cambia colore, tipo o **ambito**, oppure elimina. Le categorie
   **Personali** e **Casa** sono separate: nella schermata Categorie appaiono in liste distinte,
   e nei form (Movimento, Spesa fissa, Voce prevista) il menu Categoria mostra solo quelle
@@ -703,6 +714,7 @@ Tutte sotto `/api`, JSON, autenticazione via cookie di sessione.
 | `PATCH`| `/api/savings` | Aggiorna `emergencyMonths` / `emergencySplit` |
 | `GET`  | `/api/summary/overview?anchor=YYYY-MM-DD&scope=personal\|home` | Riepiloghi giorno/settimana/mese, ripartizione per categoria (con media 3 mesi) e per conto, split Personale/Casa |
 | `GET`  | `/api/summary/range?from&to&group=day\|week\|month&scope=` | Serie temporale aggregata |
+| `GET`  | `/api/export/transactions` | Esporta i movimenti dell'utente: filtri come `/api/transactions` (`from`, `to`, `type`, `categoryId`, `accountId`, `scope`, `q`) + `format=xlsx`\|`csv`; max 50.000 righe, 6 richieste/minuto |
 | `GET`  | `/api/backups` | Elenco dei backup **dell'utente loggato** (mai il backup globale) |
 | `POST` | `/api/backups` | Crea un backup **dell'utente loggato** |
 | `GET`  | `/api/settings/version` | Versione installata (SHA git) e se chi chiede è amministratore |

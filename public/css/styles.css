@@ -173,6 +173,22 @@ button { cursor: pointer; }
 .page-head p { color: var(--ink-faint); font-size: 0.9rem; }
 .page-head .btn { flex: none; white-space: nowrap; }
 .page-head > div:last-child { flex: none; }
+/* Menu a tendina (Esporta). */
+.menu { position: relative; }
+.menu > summary { list-style: none; cursor: pointer; user-select: none; }
+.menu > summary::-webkit-details-marker { display: none; }
+.menu.busy > summary { opacity: 0.55; pointer-events: none; }
+.menu-pop {
+  position: absolute; right: 0; top: calc(100% + 6px); z-index: 20; min-width: 170px;
+  background: var(--bg-elev); border: 1px solid var(--line); border-radius: var(--radius-sm);
+  box-shadow: var(--shadow); padding: 6px; display: flex; flex-direction: column;
+}
+@media (max-width: 560px) { .menu-pop { right: auto; left: 0; } }
+.menu-pop button {
+  background: none; border: 0; color: var(--ink); font: inherit; text-align: left;
+  padding: 10px 12px; border-radius: 8px; cursor: pointer;
+}
+.menu-pop button:hover, .menu-pop button:focus-visible { background: var(--bg-sunken); outline: none; }
 @media (max-width: 560px) {
   .page-head { align-items: center; }
   .page-head h1 { font-size: 1.3rem; }

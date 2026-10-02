@@ -580,7 +580,16 @@ async function viewMovimenti(main) {
     <div>
       <div class="page-head">
         <div><h1>Movimenti</h1><p>Tutte le entrate e le uscite</p></div>
-        <button class="btn primary" id="add-tx">${icons.plus}<span>Aggiungi</span></button>
+        <div style="display:flex;gap:8px;align-items:center">
+          <details class="menu" id="export-menu">
+            <summary class="btn ghost" id="export-btn" role="button" aria-haspopup="true">${icons.download}<span>Esporta</span></summary>
+            <div class="menu-pop">
+              <button type="button" data-fmt="xlsx">Excel (.xlsx)</button>
+              <button type="button" data-fmt="csv">CSV</button>
+            </div>
+          </details>
+          <button class="btn primary" id="add-tx">${icons.plus}<span>Aggiungi</span></button>
+        </div>
       </div>
       <div class="list-head">
         <input id="f-q" type="search" placeholder="Cerca nella descrizione o categoria…"
@@ -623,6 +632,7 @@ async function viewMovimenti(main) {
   );
 
   main.querySelector('#add-tx').addEventListener('click', () => openTxModal(null, () => viewMovimenti(main)));
+  bindExport(main);
   const reload = () => loadTxList(main);
   const qInput = main.querySelector('#f-q');
   let qTimer;
@@ -662,10 +672,10 @@ function txFilterBounds(range) {
   return { from: startOfMonth(range), to: endOfMonth(range) };
 }
 
-async function loadTxList(main) {
-  const f = state._txFilters;
+// I filtri attivi della vista Movimenti come query string (lista ed esportazione).
+function txFilterParams(f, extra = {}) {
   const { from, to } = txFilterBounds(f.range);
-  const qs = new URLSearchParams({ limit: '500' });
+  const qs = new URLSearchParams(extra);
   if (from) qs.set('from', from);
   if (to) qs.set('to', to);
   if (f.q) qs.set('q', f.q);
@@ -673,6 +683,56 @@ async function loadTxList(main) {
   if (f.categoryId) qs.set('categoryId', f.categoryId);
   if (f.accountId) qs.set('accountId', f.accountId);
   if (f.scope) qs.set('scope', f.scope);
+  return qs;
+}
+
+// Esporta i movimenti con i filtri correnti. fetch + Blob (e non un semplice link)
+// per mostrare lo stato di caricamento e il messaggio dell'API se qualcosa non va
+// (es. troppi movimenti). Il cookie di sessione viaggia come per ogni altra chiamata.
+function bindExport(main) {
+  const menu = main.querySelector('#export-menu');
+  const btn = main.querySelector('#export-btn');
+  const label = btn.querySelector('span');
+  menu.querySelectorAll('[data-fmt]').forEach((opt) =>
+    opt.addEventListener('click', async () => {
+      const format = opt.dataset.fmt;
+      menu.open = false;
+      menu.classList.add('busy'); // disabilita l'apertura del menu durante il download
+      label.textContent = 'Esporto…';
+      try {
+        const qs = txFilterParams(state._txFilters, { format });
+        const res = await fetch(`/api/export/transactions?${qs}`, { credentials: 'same-origin' });
+        if (!res.ok) {
+          let msg = `Esportazione non riuscita (HTTP ${res.status})`;
+          try {
+            const data = await res.json();
+            msg = data.message || msg;
+          } catch {}
+          throw new Error(msg);
+        }
+        const name =
+          /filename="([^"]+)"/.exec(res.headers.get('Content-Disposition') || '')?.[1] || `soldi-movimenti.${format}`;
+        const url = URL.createObjectURL(await res.blob());
+        const a = Object.assign(document.createElement('a'), { href: url, download: name });
+        document.body.appendChild(a);
+        a.click();
+        a.remove();
+        setTimeout(() => URL.revokeObjectURL(url), 10_000);
+      } catch (e) {
+        toast(e.message, 'error');
+      } finally {
+        label.textContent = 'Esporta';
+        menu.classList.remove('busy');
+      }
+    })
+  );
+  // chiude il menu cliccando altrove
+  document.addEventListener('click', (e) => { if (!menu.contains(e.target)) menu.open = false; });
+}
+
+async function loadTxList(main) {
+  const f = state._txFilters;
+  const qs = txFilterParams(f, { limit: '500' });
 
   const list = main.querySelector('#tx-list');
   list.innerHTML = '<div class="boot"><div class="boot-mark"></div></div>';

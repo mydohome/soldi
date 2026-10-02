@@ -8,6 +8,7 @@ const { requireAuth } = require('../auth/middleware');
 const { handler, httpError, isoDate } = require('../http/validate');
 const { assertCategory, categoryPairChanged } = require('../http/category-check');
 const { buildSuggestions } = require('../transactions/suggest');
+const { filterFields, buildTxFilter } = require('../transactions/filters');
 
 const router = express.Router();
 router.use(requireAuth);
@@ -59,41 +60,16 @@ async function assertOwned(table, label, userId, id) {
 }
 
 const listQuery = z.object({
-  from: isoDate.optional(),
-  to: isoDate.optional(),
-  type: z.enum(['expense', 'income']).optional(),
-  categoryId: z.coerce.number().int().positive().optional(),
-  accountId: z.coerce.number().int().positive().optional(),
-  scope: z.enum(['personal', 'home']).optional(),
-  q: z.string().trim().max(100).optional(),
+  ...filterFields,
   limit: z.coerce.number().int().min(1).max(500).default(100),
   offset: z.coerce.number().int().min(0).default(0),
 });
-
-// Escape LIKE wildcards so a user's "%" or "_" is matched literally.
-const likeContains = (s) => `%${s.replace(/[\\%_]/g, '\\$&')}%`;
 
 router.get(
   '/',
   handler(async (req, res) => {
     const q = listQuery.parse(req.query);
-    const where = ['t.user_id = $1'];
-    const params = [req.user.id];
-    const add = (sql, value) => {
-      params.push(value);
-      where.push(sql.replace('?', `$${params.length}`));
-    };
-    if (q.from) add('t.occurred_on >= ?', q.from);
-    if (q.to) add('t.occurred_on <= ?', q.to);
-    if (q.type) add('t.type = ?', q.type);
-    if (q.categoryId) add('t.category_id = ?', q.categoryId);
-    if (q.accountId) add('t.account_id = ?', q.accountId);
-    if (q.scope) add('t.scope = ?', q.scope);
-    if (q.q) {
-      params.push(likeContains(q.q));
-      const p = `$${params.length}`;
-      where.push(`(t.note ILIKE ${p} ESCAPE '\\' OR c.name ILIKE ${p} ESCAPE '\\')`);
-    }
+    const { where, params } = buildTxFilter(req.user.id, q);
 
     params.push(q.limit, q.offset);
     const rows = await query(
