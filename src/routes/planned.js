@@ -7,6 +7,7 @@ const { query } = require('../db/pool');
 const { requireAuth } = require('../auth/middleware');
 const { handler, httpError } = require('../http/validate');
 const { assertCategory } = require('../http/category-check');
+const { recurringHits } = require('../recurring/schedule');
 
 const router = express.Router();
 router.use(requireAuth);
@@ -257,27 +258,10 @@ router.get(
       c.planned += annual;
     }
 
-    // Le spese fisse valgono solo nei mesi in cui la regola è davvero in vigore:
-    // dal start_month in poi e, se ha una durata (total_occurrences), non oltre.
-    // Stessa logica di scheduleEndMonth() in src/recurring/generate.js.
+    // Le spese fisse valgono solo nei mesi in cui la regola è davvero in vigore
+    // (recurringHits, in src/recurring/schedule.js).
     // Limite noto: una regola già conclusa ha active = false ed è esclusa dalla
     // query, quindi per un anno passato il "previsto" la sottostima.
-    const absMonth = (y, m) => y * 12 + (m - 1);
-    function recurringHits(rule, yr) {
-      const sy = Number(rule.start_month.slice(0, 4));
-      const sm = Number(rule.start_month.slice(5, 7));
-      const n = rule.total_occurrences; // null = indefinita
-      return Array.from({ length: 12 }, (_, i) => {
-        const m = i + 1;
-        if (rule.cadence === 'monthly') {
-          const diff = absMonth(yr, m) - absMonth(sy, sm);
-          return diff >= 0 && (n == null || diff < n);
-        }
-        if (m !== rule.month) return false;
-        const firstYear = sm > rule.month ? sy + 1 : sy;
-        return yr >= firstYear && (n == null || yr - firstYear < n);
-      });
-    }
     function applyRecurring(row, yr) {
       const amt = euros(row.amount_cents);
       const hits = recurringHits(row, yr);

@@ -1,36 +1,14 @@
 'use strict';
 
 const { pool } = require('../db/pool');
+const { monthStart, addMonthsKey, scheduleEndMonth } = require('./schedule');
 
 const pad = (n) => String(n).padStart(2, '0');
-const monthStart = (d) => `${d.getUTCFullYear()}-${pad(d.getUTCMonth() + 1)}-01`;
 const monthOfYear = (key) => Number(key.slice(5, 7));
-
-function addMonthsKey(key, n) {
-  const [y, m] = key.split('-').map(Number);
-  const dt = new Date(Date.UTC(y, m - 1 + n, 1));
-  return monthStart(dt);
-}
 
 /** occurred_on for a rule in a given month key, e.g. ('2026-03-01', 15) -> '2026-03-15'. */
 function occurredOn(monthKey, dayOfMonth) {
   return `${monthKey.slice(0, 8)}${pad(dayOfMonth)}`;
-}
-
-/**
- * Month of a fixed-length rule's last scheduled occurrence, or null when the
- * rule runs indefinitely. A 'monthly' rule of N rate ends N-1 months after its
- * start; a 'yearly' rule of N occurrences ends N-1 years after its first fire.
- */
-function scheduleEndMonth(rule, startMonth) {
-  if (rule.total_occurrences == null) return null;
-  const n = rule.total_occurrences;
-  if (rule.cadence === 'yearly') {
-    const [sy, sm] = startMonth.split('-').map(Number);
-    const firstYear = sm > rule.month ? sy + 1 : sy;
-    return `${firstYear + n - 1}-${pad(rule.month)}-01`;
-  }
-  return addMonthsKey(startMonth, n - 1);
 }
 
 /**
