@@ -811,8 +811,45 @@ async function viewSpeseFisse(main) {
   const monthlyExpense = active.filter((r) => r.type === 'expense').reduce((s, r) => s + monthlyEquivalent(r), 0);
   const monthlyIncome = active.filter((r) => r.type === 'income').reduce((s, r) => s + monthlyEquivalent(r), 0);
 
+  // Barra di avanzamento a calendario (server: recurring/schedule.js). Le regole a
+  // tempo indeterminato non hanno barra; quelle in pausa hanno una tinta neutra.
+  const ruleProgress = (r) => {
+    const p = r.progress;
+    if (!p) return '<div class="rule-progress-open">A tempo indeterminato</div>';
+    const unit = r.cadence === 'yearly' ? 'Occorrenza' : 'Rata';
+    const paused = !r.active && !p.completed;
+    const [ey, em] = p.endMonth ? p.endMonth.split('-').map(Number) : [];
+    const state = p.completed ? 'Completata' : paused ? 'In pausa' : '';
+    const title = p.done
+      ? `${unit} ${p.done} di ${p.total}`
+      : `Nessuna ${unit.toLowerCase()} ancora · ${p.total} in totale`;
+    return `
+      <div class="rule-progress ${p.completed ? 'is-done' : ''} ${paused ? 'is-paused' : ''}">
+        <div class="rule-progress-head">
+          <span>${title}${state ? ` · <strong>${state}</strong>` : ''}</span>
+          <span class="pct">${p.percent}%</span>
+        </div>
+        <div class="progress-track" role="progressbar" aria-label="Avanzamento di ${escapeHtml(r.name)}"
+             aria-valuemin="0" aria-valuemax="${p.total}" aria-valuenow="${p.done}"
+             aria-valuetext="${title}, ${p.percent}%">
+          <div class="progress-fill" style="width:${p.percent}%"></div>
+        </div>
+        <div class="rule-progress-foot">
+          ${
+            p.completed
+              ? ''
+              : `<span>Residuo ${fmtEur(p.remainingAmount)} (${p.remaining} ${
+                  r.cadence === 'yearly' ? (p.remaining === 1 ? 'occorrenza' : 'occorrenze') : p.remaining === 1 ? 'rata' : 'rate'
+                })</span>`
+          }
+          <span>Versato ${fmtEur(p.paid)}</span>
+          ${em ? `<span>Ultima ${r.cadence === 'yearly' ? 'occorrenza' : 'rata'}: ${MONTHS_SHORT[em - 1].toLowerCase()} ${ey}</span>` : ''}
+        </div>
+      </div>`;
+  };
+
   const ruleRow = (r) => `
-    <div class="cat-row ${r.active ? '' : 'is-off'}" data-id="${r.id}">
+    <div class="cat-row ${r.active || r.progress?.completed ? '' : 'is-off'}" data-id="${r.id}">
       <span class="dot" style="background:${r.categoryColor || 'var(--brand)'}"></span>
       <div class="meta">
         <div class="name">${escapeHtml(r.name)} ${scopeBadge(r.scope)}</div>
@@ -820,15 +857,10 @@ async function viewSpeseFisse(main) {
           r.cadence === 'monthly'
             ? 'ogni mese, il ' + r.dayOfMonth
             : 'ogni anno a ' + MONTHS_LONG[(r.month || 1) - 1] + ', il ' + r.dayOfMonth
-        }${
-          r.totalOccurrences != null
-            ? ` · ${Math.min(r.occurrencesDone ?? 0, r.totalOccurrences)}/${r.totalOccurrences} ${
-                r.cadence === 'yearly' ? 'occorrenze' : 'rate'
-              }`
-            : ''
         }${r.categoryName ? ' · ' + escapeHtml(r.categoryName) : ''}${
           r.accountName ? ' · ' + escapeHtml(r.accountName) : ''
         }</div>
+        ${ruleProgress(r)}
       </div>
       <div class="row-tail">
         <span class="amount ${r.type}">${r.type === 'income' ? '+' : '−'}${fmtEur(r.amount)}</span>

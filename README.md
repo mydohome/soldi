@@ -39,7 +39,7 @@ Funziona da smartphone e da desktop (interfaccia responsive), gira interamente c
 | 🏷️ **Categorie** | Personalizzabili per colore, tipo (spesa/entrata) e **ambito (Personale/Casa)** — separate nella schermata Categorie e nei filtri dei form. 11 categorie predefinite alla registrazione. |
 | 🏦 **Conti** | Contanti, conto corrente, carta… da associare ai movimenti come le categorie. 3 conti predefiniti alla registrazione. |
 | 🏠 **Personale / Casa** | Ogni movimento ha un ambito; la dashboard mostra Personale, Casa e Totale affiancati, e c'è un filtro dedicato. |
-| 🔁 **Spese fisse** | Regole ricorrenti (mutuo, finanziamento, addebiti, stipendio…), **mensili o una volta l'anno**, con **durata opzionale** (es. finanziamento a 12 rate → poi si disattiva). Generano un movimento vero finché sono attive. Recupero automatico dopo downtime. |
+| 🔁 **Spese fisse** | Regole ricorrenti (mutuo, finanziamento, addebiti, stipendio…), **mensili o una volta l'anno**, con **durata opzionale** (es. finanziamento a 12 rate → poi si disattiva). Generano un movimento vero finché sono attive. Barra di avanzamento con **residuo** e versato per quelle a durata limitata. Recupero automatico dopo downtime. |
 | 🎯 **Previsioni** | Voci di budget mensili/annuali → previsione delle spese dell'anno, proiezione a fine anno, **budget mensile necessario** e **risparmio potenziale**. Non tocca i grafici della Dashboard. |
 | 🐖 **Risparmio** | In base ai mesi passati stima quanto puoi destinare, in percentuale sulle entrate, a un **fondo sicurezza** e a un **fondo risparmio**. |
 | 📱 **Installabile** | PWA: da iPhone/Android *Aggiungi a Home* e si apre a tutto schermo con icona propria. |
@@ -695,7 +695,7 @@ Tutte sotto `/api`, JSON, autenticazione via cookie di sessione.
 | `GET`  | `/api/transactions/suggest?note&type&scope` | Suggerimenti (descrizione, categoria, conto) dallo storico |
 | `GET`/`POST`/`PATCH`/`DELETE` | `/api/categories` | Gestione categorie (`kind`, `scope`: personal\|home) |
 | `GET`/`POST`/`PATCH`/`DELETE` | `/api/accounts` | Gestione conti |
-| `GET`/`POST`/`PATCH`/`DELETE` | `/api/recurring` | Gestione spese fisse (`cadence`: monthly\|yearly + `month`; `totalOccurrences` per la durata limitata; `DELETE ?keepMovimenti=true` tiene i movimenti già generati) |
+| `GET`/`POST`/`PATCH`/`DELETE` | `/api/recurring` | Gestione spese fisse (`cadence`: monthly\|yearly + `month`; `totalOccurrences` per la durata limitata, con `progress` = avanzamento a calendario, residuo e versato; `DELETE ?keepMovimenti=true` tiene i movimenti già generati) |
 | `POST` | `/api/recurring/run` | Genera subito i movimenti fissi dovuti |
 | `GET`/`POST`/`PATCH`/`DELETE` | `/api/planned` | Gestione voci di budget (spese previste) |
 | `GET`  | `/api/planned/summary?year=YYYY&includeRecurring=true\|false&scope=` | Previsione annuale: totali, proiezione, budget mensile necessario, risparmio potenziale, per mese/categoria/ambito |

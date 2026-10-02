@@ -918,6 +918,17 @@ code.block {
 .cat-row .amount { font-weight: 700; font-variant-numeric: tabular-nums; white-space: nowrap; }
 .cat-row .amount.expense { color: var(--expense); }
 .cat-row .amount.income { color: var(--income); }
+/* Avanzamento delle spese fisse a durata limitata. */
+.rule-progress, .rule-progress-open { margin-top: 8px; font-size: 0.8rem; color: var(--ink-soft); }
+.rule-progress-open { margin-top: 2px; }
+.rule-progress-head { display: flex; justify-content: space-between; gap: 8px; margin-bottom: 5px; }
+.rule-progress-head .pct { font-variant-numeric: tabular-nums; font-weight: 700; color: var(--ink); }
+.progress-track { height: 8px; border-radius: 999px; background: var(--bg-sunken); overflow: hidden; border: 1px solid var(--line); }
+.progress-fill { height: 100%; border-radius: 999px; background: var(--brand); min-width: 0; }
+.rule-progress.is-done .progress-fill { background: var(--income); }
+.rule-progress.is-paused .progress-fill { background: var(--ink-faint); }
+.rule-progress-foot { display: flex; flex-wrap: wrap; gap: 2px 14px; margin-top: 5px; color: var(--ink-soft); font-variant-numeric: tabular-nums; }
+.rule-progress-foot > span { overflow-wrap: anywhere; }
 .cat-row.is-off { opacity: 0.5; }
 .cat-row.is-off .amount { color: var(--ink-faint); }
 .cat-row .switch { width: 42px; height: 24px; }

@@ -8,6 +8,7 @@ const { requireAuth } = require('../auth/middleware');
 const { handler, httpError } = require('../http/validate');
 const { assertCategory, categoryPairChanged } = require('../http/category-check');
 const { generateDue } = require('../recurring/generate');
+const { installmentProgress } = require('../recurring/schedule');
 
 const router = express.Router();
 router.use(requireAuth);
@@ -40,6 +41,9 @@ const toEuros = (c) => Number(c) / 100;
 const d = (x) => (x instanceof Date ? x.toISOString().slice(0, 10) : x);
 
 function shape(row) {
+  // La regola con le date già normalizzate in stringhe YYYY-MM-DD (il pool le
+  // restituisce già così; d() copre anche un eventuale Date).
+  const rule = { ...row, start_month: d(row.start_month), last_run_month: row.last_run_month ? d(row.last_run_month) : null };
   return {
     id: row.id,
     name: row.name,
@@ -58,8 +62,12 @@ function shape(row) {
     occurrencesDone: row.occurrences_done ?? null,
     note: row.note,
     active: row.active,
-    startMonth: d(row.start_month),
-    lastRunMonth: row.last_run_month ? d(row.last_run_month) : null,
+    startMonth: rule.start_month,
+    lastRunMonth: rule.last_run_month,
+    // Avanzamento a calendario (null per le regole a tempo indeterminato). Non
+    // dipende da occurrencesDone, che conta i movimenti ed è quindi sensibile
+    // alla cancellazione di un movimento generato.
+    progress: installmentProgress(rule, row.paid_cents),
   };
 }
 
@@ -71,7 +79,8 @@ async function assertOwned(table, label, userId, id) {
 
 const SELECT_RULE = `
   SELECT r.*, c.name AS category_name, c.color AS category_color, a.name AS account_name,
-         (SELECT COUNT(*)::int FROM transactions t WHERE t.recurring_rule_id = r.id) AS occurrences_done
+         (SELECT COUNT(*)::int FROM transactions t WHERE t.recurring_rule_id = r.id) AS occurrences_done,
+         (SELECT COALESCE(SUM(t.amount_cents), 0) FROM transactions t WHERE t.recurring_rule_id = r.id) AS paid_cents
   FROM recurring_rules r
   LEFT JOIN categories c ON c.id = r.category_id
   LEFT JOIN accounts   a ON a.id = r.account_id`;
