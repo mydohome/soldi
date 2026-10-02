@@ -13,21 +13,22 @@ router.use(requireAuth);
 const euros = (c) => Number(c || 0) / 100;
 const toCents = (e) => Math.round(e * 100);
 
-const plannedInput = z
-  .object({
-    name: z.string().trim().min(1).max(80),
-    categoryId: z.coerce.number().int().positive().nullable().optional(),
-    scope: z.enum(['personal', 'home']).default('personal'),
-    amount: z.coerce.number().positive('L’importo deve essere maggiore di zero').max(1_000_000_000),
-    cadence: z.enum(['monthly', 'yearly']).default('monthly'),
-    month: z.coerce.number().int().min(1).max(12).nullable().optional(),
-    active: z.boolean().default(true),
-    note: z.string().trim().max(280).default(''),
-  })
-  .refine((v) => v.cadence !== 'yearly' || (v.month != null), {
-    message: 'Per una voce annuale serve il mese',
-    path: ['month'],
-  });
+// Lo shape resta separato dal refine: un ZodEffects non ha .partial(), che il
+// PATCH usa per accettare solo i campi presenti.
+const plannedShape = z.object({
+  name: z.string().trim().min(1).max(80),
+  categoryId: z.coerce.number().int().positive().nullable().optional(),
+  scope: z.enum(['personal', 'home']).default('personal'),
+  amount: z.coerce.number().positive('L’importo deve essere maggiore di zero').max(1_000_000_000),
+  cadence: z.enum(['monthly', 'yearly']).default('monthly'),
+  month: z.coerce.number().int().min(1).max(12).nullable().optional(),
+  active: z.boolean().default(true),
+  note: z.string().trim().max(280).default(''),
+});
+const plannedInput = plannedShape.refine((v) => v.cadence !== 'yearly' || v.month != null, {
+  message: 'Per una voce annuale serve il mese',
+  path: ['month'],
+});
 
 function shape(row) {
   return {
@@ -98,7 +99,7 @@ router.patch(
   '/:id',
   handler(async (req, res) => {
     const id = z.coerce.number().int().positive().parse(req.params.id);
-    const patch = plannedInput.partial().parse(req.body);
+    const patch = plannedShape.partial().parse(req.body);
     if (Object.keys(patch).length === 0) throw httpError(400, 'empty_patch', 'Nessun campo da aggiornare');
     if ('categoryId' in patch) await assertCategoryOwned(req.user.id, patch.categoryId ?? null);
 
@@ -170,7 +171,10 @@ router.get(
     const year = q.year || now.getUTCFullYear();
     const curYear = now.getUTCFullYear();
     const curMonth = now.getUTCMonth() + 1;
-    const scopeSql = q.scope ? ` AND scope = '${q.scope}'` : ''; // scope is a validated enum
+    // Lo scope è sempre un parametro e sempre qualificato con l'alias di tabella:
+    // senza alias, `scope` è ambiguo nei join con categories (che ha la stessa colonna).
+    const scopeArgs = q.scope ? [q.scope] : [];
+    const scopeAt = (n, alias) => (q.scope ? ` AND ${alias}.scope = $${n}` : '');
 
     // Planned items (active), optionally + active recurring expense rules.
     const planned = await query(
@@ -178,32 +182,33 @@ router.get(
               c.name AS category_name, c.color AS category_color
        FROM planned_expenses p
        LEFT JOIN categories c ON c.id = p.category_id
-       WHERE p.user_id = $1 AND p.active = true${scopeSql}`,
-      [req.user.id]
+       WHERE p.user_id = $1 AND p.active = true${scopeAt(2, 'p')}`,
+      [req.user.id, ...scopeArgs]
     );
 
     let recurring = { rows: [] };
     if (q.includeRecurring) {
       recurring = await query(
         `SELECT r.amount_cents, r.scope, r.category_id, r.cadence, r.month,
+                r.start_month, r.total_occurrences,
                 c.name AS category_name, c.color AS category_color
          FROM recurring_rules r
          LEFT JOIN categories c ON c.id = r.category_id
-         WHERE r.user_id = $1 AND r.active = true AND r.type = 'expense'${scopeSql}`,
-        [req.user.id]
+         WHERE r.user_id = $1 AND r.active = true AND r.type = 'expense'${scopeAt(2, 'r')}`,
+        [req.user.id, ...scopeArgs]
       );
     }
 
     // Actual expenses for the year, per month.
     const actual = await query(
-      `SELECT EXTRACT(MONTH FROM occurred_on)::int AS m,
-              SUM(amount_cents) AS total
+      `SELECT EXTRACT(MONTH FROM t.occurred_on)::int AS m,
+              SUM(t.amount_cents) AS total
        FROM transactions t
-       WHERE user_id = $1 AND type = 'expense'
-         AND occurred_on >= make_date($2, 1, 1)
-         AND occurred_on <  make_date($2 + 1, 1, 1)${scopeSql}
+       WHERE t.user_id = $1 AND t.type = 'expense'
+         AND t.occurred_on >= make_date($2, 1, 1)
+         AND t.occurred_on <  make_date($2 + 1, 1, 1)${scopeAt(3, 't')}
        GROUP BY 1`,
-      [req.user.id, year]
+      [req.user.id, year, ...scopeArgs]
     );
     const actualByCat = await query(
       `SELECT t.category_id,
@@ -214,9 +219,9 @@ router.get(
        LEFT JOIN categories c ON c.id = t.category_id
        WHERE t.user_id = $1 AND t.type = 'expense'
          AND t.occurred_on >= make_date($2, 1, 1)
-         AND t.occurred_on <  make_date($2 + 1, 1, 1)${scopeSql}
+         AND t.occurred_on <  make_date($2 + 1, 1, 1)${scopeAt(3, 't')}
        GROUP BY 1, 2, 3`,
-      [req.user.id, year]
+      [req.user.id, year, ...scopeArgs]
     );
 
     const plannedByMonth = Array(12).fill(0);
@@ -231,7 +236,7 @@ router.get(
     };
 
     // A monthly item hits every month of the year; a yearly item hits only its
-    // chosen month. Shared by planned_expenses and (when included) recurring_rules.
+    // chosen month. Solo per planned_expenses (le spese fisse: applyRecurring).
     function applyPlanned(row) {
       const amt = euros(row.amount_cents);
       const annual = row.cadence === 'monthly' ? amt * 12 : amt;
@@ -249,22 +254,55 @@ router.get(
       c.planned += annual;
     }
 
+    // Le spese fisse valgono solo nei mesi in cui la regola è davvero in vigore:
+    // dal start_month in poi e, se ha una durata (total_occurrences), non oltre.
+    // Stessa logica di scheduleEndMonth() in src/recurring/generate.js.
+    // Limite noto: una regola già conclusa ha active = false ed è esclusa dalla
+    // query, quindi per un anno passato il "previsto" la sottostima.
+    const absMonth = (y, m) => y * 12 + (m - 1);
+    function recurringHits(rule, yr) {
+      const sy = Number(rule.start_month.slice(0, 4));
+      const sm = Number(rule.start_month.slice(5, 7));
+      const n = rule.total_occurrences; // null = indefinita
+      return Array.from({ length: 12 }, (_, i) => {
+        const m = i + 1;
+        if (rule.cadence === 'monthly') {
+          const diff = absMonth(yr, m) - absMonth(sy, sm);
+          return diff >= 0 && (n == null || diff < n);
+        }
+        if (m !== rule.month) return false;
+        const firstYear = sm > rule.month ? sy + 1 : sy;
+        return yr >= firstYear && (n == null || yr - firstYear < n);
+      });
+    }
+    function applyRecurring(row, yr) {
+      const amt = euros(row.amount_cents);
+      const hits = recurringHits(row, yr);
+      hits.forEach((hit, i) => {
+        if (hit) plannedByMonth[i] += amt;
+      });
+      const times = hits.filter(Boolean).length;
+      byScope[row.scope].planned += amt * times;
+      bump(cats, row.category_id, row.category_name || 'Senza categoria', row.category_color || '#9aa4b2').planned +=
+        amt * times;
+    }
+
     for (const row of actual.rows) actualByMonth[row.m - 1] = euros(row.total);
     for (const row of planned.rows) applyPlanned(row);
-    for (const row of recurring.rows) applyPlanned(row);
+    for (const row of recurring.rows) applyRecurring(row, year);
     for (const row of actualByCat.rows) {
       const c = bump(cats, row.category_id, row.name, row.color);
       c.actual += euros(row.total);
     }
     // scope actuals
     const actualScope = await query(
-      `SELECT scope, SUM(amount_cents) AS total
-       FROM transactions
-       WHERE user_id = $1 AND type = 'expense'
-         AND occurred_on >= make_date($2, 1, 1)
-         AND occurred_on <  make_date($2 + 1, 1, 1)${scopeSql}
-       GROUP BY scope`,
-      [req.user.id, year]
+      `SELECT t.scope, SUM(t.amount_cents) AS total
+       FROM transactions t
+       WHERE t.user_id = $1 AND t.type = 'expense'
+         AND t.occurred_on >= make_date($2, 1, 1)
+         AND t.occurred_on <  make_date($2 + 1, 1, 1)${scopeAt(3, 't')}
+       GROUP BY t.scope`,
+      [req.user.id, year, ...scopeArgs]
     );
     for (const row of actualScope.rows) byScope[row.scope].actual = euros(row.total);
 
@@ -273,13 +311,13 @@ router.get(
     // projection, since budget items here don't affect income tracking.
     const incomeByMonth = Array(12).fill(0);
     const income = await query(
-      `SELECT EXTRACT(MONTH FROM occurred_on)::int AS m, SUM(amount_cents) AS total
-       FROM transactions
-       WHERE user_id = $1 AND type = 'income'
-         AND occurred_on >= make_date($2, 1, 1)
-         AND occurred_on <  make_date($2 + 1, 1, 1)${scopeSql}
+      `SELECT EXTRACT(MONTH FROM t.occurred_on)::int AS m, SUM(t.amount_cents) AS total
+       FROM transactions t
+       WHERE t.user_id = $1 AND t.type = 'income'
+         AND t.occurred_on >= make_date($2, 1, 1)
+         AND t.occurred_on <  make_date($2 + 1, 1, 1)${scopeAt(3, 't')}
        GROUP BY 1`,
-      [req.user.id, year]
+      [req.user.id, year, ...scopeArgs]
     );
     for (const row of income.rows) incomeByMonth[row.m - 1] = euros(row.total);
 
@@ -299,7 +337,8 @@ router.get(
     // a quelle mensili — e "quanto potrei risparmiare" confrontandolo con le
     // entrate reali medie dei mesi già trascorsi dell'anno scelto.
     const monthlyBudgetNeed = round(totalPlanned / 12);
-    const elapsedMonths = year < curYear ? 12 : year > curYear ? 0 : curMonth;
+    // Solo i mesi completi: il mese in corso non è ancora chiuso e abbasserebbe la media.
+    const elapsedMonths = year < curYear ? 12 : year > curYear ? 0 : Math.max(curMonth - 1, 0);
     const avgMonthlyIncome =
       elapsedMonths > 0
         ? round(incomeByMonth.slice(0, elapsedMonths).reduce((a, b) => a + b, 0) / elapsedMonths)

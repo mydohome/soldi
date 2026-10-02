@@ -5,7 +5,7 @@ const { z } = require('zod');
 
 const { query } = require('../db/pool');
 const { requireAuth } = require('../auth/middleware');
-const { handler } = require('../http/validate');
+const { handler, httpError } = require('../http/validate');
 
 const router = express.Router();
 router.use(requireAuth);
@@ -85,6 +85,8 @@ async function byCategory(userId, from, to, type, scope) {
 /**
  * Average monthly expense per category over the N full months before `monthFrom`
  * (the first day of the anchor month). Used to show a "vs media" delta.
+ * La media divide per i mesi della finestra che hanno almeno un movimento (min 1),
+ * non sempre per N: con uno solo mese di storico il confronto non va gonfiato.
  * Returns Map(categoryId|null -> euros/month).
  */
 async function prevMonthsAvgByCategory(userId, monthFrom, months, scope) {
@@ -92,16 +94,24 @@ async function prevMonthsAvgByCategory(userId, monthFrom, months, scope) {
   const params = [userId, monthFrom, months];
   if (sf.value) params.push(sf.value);
   const r = await query(
-    `SELECT t.category_id, SUM(t.amount_cents) AS total
-     FROM transactions t
-     WHERE t.user_id = $1 AND t.type = 'expense'
-       AND t.occurred_on >= ($2::date - make_interval(months => $3::int))
-       AND t.occurred_on <  $2::date${sf.clause}
-     GROUP BY t.category_id`,
+    `WITH win AS (
+       SELECT t.* FROM transactions t
+       WHERE t.user_id = $1
+         AND t.occurred_on >= ($2::date - make_interval(months => $3::int))
+         AND t.occurred_on <  $2::date${sf.clause}
+     )
+     SELECT category_id,
+            SUM(amount_cents) FILTER (WHERE type = 'expense') AS total,
+            (SELECT COUNT(DISTINCT date_trunc('month', occurred_on::timestamp)) FROM win) AS months_seen
+     FROM win
+     GROUP BY category_id`,
     params
   );
   const map = new Map();
-  for (const row of r.rows) map.set(row.category_id, euros(row.total) / months);
+  for (const row of r.rows) {
+    if (row.total == null) continue;
+    map.set(row.category_id, euros(row.total) / Math.max(1, Number(row.months_seen)));
+  }
   return map;
 }
 
@@ -269,10 +279,31 @@ const rangeQuery = z.object({
   scope: scopeParam,
 });
 
+// Oltre questo numero di bucket la risposta diventa inutilmente enorme
+// (es. group=day su cent'anni = decine di migliaia di righe).
+const MAX_RANGE_BUCKETS = 800;
+const DAY_MS = 86_400_000;
+const utcMs = (iso) => Date.UTC(+iso.slice(0, 4), +iso.slice(5, 7) - 1, +iso.slice(8, 10));
+
+function bucketCount(from, to, group) {
+  const f = utcMs(from);
+  const t = utcMs(to);
+  if (group === 'day') return Math.floor((t - f) / DAY_MS) + 1;
+  if (group === 'week') {
+    const monday = (ms) => ms - ((new Date(ms).getUTCDay() + 6) % 7) * DAY_MS;
+    return Math.floor((monday(t) - monday(f)) / (7 * DAY_MS)) + 1;
+  }
+  return (+to.slice(0, 4) - +from.slice(0, 4)) * 12 + (+to.slice(5, 7) - +from.slice(5, 7)) + 1;
+}
+
 router.get(
   '/range',
   handler(async (req, res) => {
     const q = rangeQuery.parse(req.query);
+    if (q.to < q.from) throw httpError(400, 'bad_range', 'La data finale è precedente a quella iniziale');
+    if (bucketCount(q.from, q.to, q.group) > MAX_RANGE_BUCKETS) {
+      throw httpError(400, 'range_too_large', 'Intervallo troppo ampio: restringilo o usa un raggruppamento più largo');
+    }
     const step = { day: '1 day', week: '1 week', month: '1 month' }[q.group];
     const params = [q.from, q.to, q.group, step, req.user.id];
     let scopeClause = '';
