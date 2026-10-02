@@ -46,7 +46,7 @@ Funziona da smartphone e da desktop (interfaccia responsive), gira interamente c
 | 📊 **Riepiloghi** | Totali entrate / uscite / saldo per **giorno**, **settimana** (lun–dom) e **mese**, con navigazione avanti/indietro. Tocca un box per l'elenco dei movimenti di quel periodo. |
 | 📈 **Grafici** | Donut per categoria (con confronto ▲▼ rispetto alla media di 3 mesi) e barre entrate/uscite. SVG originali, nessuna libreria esterna. |
 | 🗄️ **Backup** | CSV automatico ogni settimana + backup manuale on‑demand, **e ripristino**, tutto in **Impostazioni** — ogni utente sui propri dati. |
-| ⬆️ **Aggiornamento dall'app** | In **Impostazioni**: controlla e installa l'ultima versione da git (`SELF_UPDATE_ENABLED=true`). |
+| ⬆️ **Aggiornamento dall'app** | In **Impostazioni**, solo per l'**amministratore** (il primo utente creato, o `ADMIN_EMAIL`): controlla e installa l'ultima versione da git (`SELF_UPDATE_ENABLED=true`). |
 | ♻️ **Ripristino** | Comando singolo che ricarica i dati da un backup CSV. |
 | 🎨 **UI** | Design moderno, tema chiaro/scuro automatico, elementi grafici originali. |
 | 📖 **Guida in-app** | In **Impostazioni → Guida**: come aggiungere movimenti e gestire categorie, conti e spese fisse, con screenshot delle schermate. |
@@ -132,7 +132,8 @@ git -c credential.helper= pull --ff-only    # d'ora in poi funziona anche a mano
 Lo schema del database viene applicato automaticamente a ogni avvio (idempotente).
 Non serve `docker compose down -v` (cancellerebbe i dati).
 
-**Aggiornare dall'app:** metti `SELF_UPDATE_ENABLED=true` nel `.env` e riavvia una volta.
+**Aggiornare dall'app:** metti `SELF_UPDATE_ENABLED=true` nel `.env` e riavvia una volta. Il pulsante
+è visibile e utilizzabile solo dall'**amministratore** (vedi `ADMIN_EMAIL` nella tabella sotto): gli altri utenti non lo vedono.
 Poi da **Impostazioni → Aggiorna** l'app fa `git pull` + riavvio da sola. Vanno bene le
 modifiche a codice e schema DB; le modifiche a `Dockerfile`, dipendenze o
 `docker-compose.yml` richiedono comunque `./scripts/update.sh`. Il processo nel container
@@ -268,6 +269,7 @@ In NPM: **Forward Hostname** `<IP_DEL_SERVER_SOLDI>`, **Forward Port** `3010`,
 | `RECURRING_ENABLED` | `true` | Abilita la generazione automatica delle spese fisse. |
 | `RECURRING_CRON` | `5 6 * * *` | Quando controllare le spese fisse dovute (+ sempre all'avvio). |
 | `SELF_UPDATE_ENABLED` | `false` | `true` = il pulsante **Aggiorna** in Impostazioni fa `git pull` + riavvio del container (senza rebuild). Le modifiche a `Dockerfile`, dipendenze o `docker-compose.yml` richiedono comunque `./scripts/update.sh`. |
+| `ADMIN_EMAIL` | — (vuota) | Email o nome utente dell'amministratore, l'unico che può controllare e applicare gli aggiornamenti dall'app (riguardano tutta l'installazione). Vuota = il primo utente creato (id più basso: `npm run user:list`). Se non corrisponde a nessun utente nessuno può aggiornare dall'app; resta `./scripts/update.sh`. Con un `docker-compose.yml` personalizzato aggiungi `ADMIN_EMAIL: ${ADMIN_EMAIL:-}` a `environment`. |
 | `PUID` / `PGID` | `1000` | Solo `docker-compose.npm.yml`: uid/gid con cui gira il container, così l'aggiornamento dall'app può scrivere nel checkout git. Vedi lo scenario B della sezione reverse proxy. |
 | `SECRETS_KEY` | — (facoltativa) | Chiave di cifratura per segreti applicativi (oggi: le credenziali Telegram, vedi [Gestione utenti](#gestione-utenti)). Serve solo a `npm run user:telegram`. Genera con `openssl rand -hex 32`. |
 
@@ -703,9 +705,9 @@ Tutte sotto `/api`, JSON, autenticazione via cookie di sessione.
 | `GET`  | `/api/summary/range?from&to&group=day\|week\|month&scope=` | Serie temporale aggregata |
 | `GET`  | `/api/backups` | Elenco dei backup **dell'utente loggato** (mai il backup globale) |
 | `POST` | `/api/backups` | Crea un backup **dell'utente loggato** |
-| `GET`  | `/api/settings/version` | Versione installata (SHA git) |
-| `GET`  | `/api/settings/check-update` | Confronta con `origin/main` |
-| `POST` | `/api/settings/update` | `git pull` + riavvio (se `SELF_UPDATE_ENABLED=true`) |
+| `GET`  | `/api/settings/version` | Versione installata (SHA git) e se chi chiede è amministratore |
+| `GET`  | `/api/settings/check-update` | Confronta con `origin/main` — solo amministratore |
+| `POST` | `/api/settings/update` | `git pull` + riavvio (se `SELF_UPDATE_ENABLED=true`) — solo amministratore |
 | `GET`  | `/api/health` | Stato servizio |
 
 ---

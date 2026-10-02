@@ -1845,6 +1845,9 @@ async function viewImpostazioni(main) {
         ).join('')}
       </div>
 
+      ${
+        version.isAdmin
+          ? `
       <h2 class="section-title">Aggiornamento</h2>
       <div class="card card-pad" id="update-card">
         <div class="kv"><span>Versione installata</span><span class="mono">${escapeHtml(verLabel)}</span></div>
@@ -1860,6 +1863,9 @@ async function viewImpostazioni(main) {
           <button class="btn primary" id="do-update" hidden>${icons.download}<span>Aggiorna ora</span></button>
         </div>
       </div>
+`
+          : ''
+      }
 
       <h2 class="section-title">Backup</h2>
       <div class="page-head" style="margin:0 0 12px">
