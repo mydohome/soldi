@@ -580,16 +580,7 @@ async function viewMovimenti(main) {
     <div>
       <div class="page-head">
         <div><h1>Movimenti</h1><p>Tutte le entrate e le uscite</p></div>
-        <div style="display:flex;gap:8px;align-items:center">
-          <details class="menu" id="export-menu">
-            <summary class="btn ghost" id="export-btn" role="button" aria-haspopup="true">${icons.download}<span>Esporta</span></summary>
-            <div class="menu-pop">
-              <button type="button" data-fmt="xlsx">Excel (.xlsx)</button>
-              <button type="button" data-fmt="csv">CSV</button>
-            </div>
-          </details>
-          <button class="btn primary" id="add-tx">${icons.plus}<span>Aggiungi</span></button>
-        </div>
+        <button class="btn primary" id="add-tx">${icons.plus}<span>Aggiungi</span></button>
       </div>
       <div class="list-head">
         <input id="f-q" type="search" placeholder="Cerca nella descrizione o categoria…"
@@ -632,7 +623,6 @@ async function viewMovimenti(main) {
   );
 
   main.querySelector('#add-tx').addEventListener('click', () => openTxModal(null, () => viewMovimenti(main)));
-  bindExport(main);
   const reload = () => loadTxList(main);
   const qInput = main.querySelector('#f-q');
   let qTimer;
@@ -672,10 +662,10 @@ function txFilterBounds(range) {
   return { from: startOfMonth(range), to: endOfMonth(range) };
 }
 
-// I filtri attivi della vista Movimenti come query string (lista ed esportazione).
-function txFilterParams(f, extra = {}) {
+async function loadTxList(main) {
+  const f = state._txFilters;
   const { from, to } = txFilterBounds(f.range);
-  const qs = new URLSearchParams(extra);
+  const qs = new URLSearchParams({ limit: '500' });
   if (from) qs.set('from', from);
   if (to) qs.set('to', to);
   if (f.q) qs.set('q', f.q);
@@ -683,56 +673,6 @@ function txFilterParams(f, extra = {}) {
   if (f.categoryId) qs.set('categoryId', f.categoryId);
   if (f.accountId) qs.set('accountId', f.accountId);
   if (f.scope) qs.set('scope', f.scope);
-  return qs;
-}
-
-// Esporta i movimenti con i filtri correnti. fetch + Blob (e non un semplice link)
-// per mostrare lo stato di caricamento e il messaggio dell'API se qualcosa non va
-// (es. troppi movimenti). Il cookie di sessione viaggia come per ogni altra chiamata.
-function bindExport(main) {
-  const menu = main.querySelector('#export-menu');
-  const btn = main.querySelector('#export-btn');
-  const label = btn.querySelector('span');
-  menu.querySelectorAll('[data-fmt]').forEach((opt) =>
-    opt.addEventListener('click', async () => {
-      const format = opt.dataset.fmt;
-      menu.open = false;
-      menu.classList.add('busy'); // disabilita l'apertura del menu durante il download
-      label.textContent = 'Esporto…';
-      try {
-        const qs = txFilterParams(state._txFilters, { format });
-        const res = await fetch(`/api/export/transactions?${qs}`, { credentials: 'same-origin' });
-        if (!res.ok) {
-          let msg = `Esportazione non riuscita (HTTP ${res.status})`;
-          try {
-            const data = await res.json();
-            msg = data.message || msg;
-          } catch {}
-          throw new Error(msg);
-        }
-        const name =
-          /filename="([^"]+)"/.exec(res.headers.get('Content-Disposition') || '')?.[1] || `soldi-movimenti.${format}`;
-        const url = URL.createObjectURL(await res.blob());
-        const a = Object.assign(document.createElement('a'), { href: url, download: name });
-        document.body.appendChild(a);
-        a.click();
-        a.remove();
-        setTimeout(() => URL.revokeObjectURL(url), 10_000);
-      } catch (e) {
-        toast(e.message, 'error');
-      } finally {
-        label.textContent = 'Esporta';
-        menu.classList.remove('busy');
-      }
-    })
-  );
-  // chiude il menu cliccando altrove
-  document.addEventListener('click', (e) => { if (!menu.contains(e.target)) menu.open = false; });
-}
-
-async function loadTxList(main) {
-  const f = state._txFilters;
-  const qs = txFilterParams(f, { limit: '500' });
 
   const list = main.querySelector('#tx-list');
   list.innerHTML = '<div class="boot"><div class="boot-mark"></div></div>';
@@ -1905,10 +1845,84 @@ async function viewGuida(main) {
 }
 
 /* ------------------------------------------------------------------ impostazioni */
+// Esportazione dei movimenti con i filtri scelti nella scheda «Esporta i dati».
+// fetch + Blob (e non un semplice link) per mostrare lo stato di caricamento e il
+// messaggio dell'API se qualcosa non va (es. troppi movimenti). Il cookie di
+// sessione viaggia come per ogni altra chiamata.
+function exportBounds(range, from, to) {
+  const year = today().slice(0, 4);
+  if (range === 'all') return {};
+  if (range === 'year') return { from: `${year}-01-01`, to: `${year}-12-31` };
+  if (range === 'lastyear') return { from: `${year - 1}-01-01`, to: `${year - 1}-12-31` };
+  if (range === 'custom') return { from, to };
+  return txFilterBounds(range); // '3m' oppure un mese YYYY-MM-01
+}
+
+function bindExport(main) {
+  const card = main.querySelector('#export-card');
+  const val = (id) => card.querySelector(id).value;
+  const custom = card.querySelector('#ex-custom');
+  card.querySelector('#ex-range').addEventListener('change', (e) => {
+    custom.hidden = e.target.value !== 'custom';
+  });
+
+  const buttons = [...card.querySelectorAll('[data-fmt]')];
+  buttons.forEach((btn) =>
+    btn.addEventListener('click', async () => {
+      const format = btn.dataset.fmt;
+      const range = val('#ex-range');
+      const { from, to } = exportBounds(range, val('#ex-from'), val('#ex-to'));
+      if (range === 'custom' && from && to && from > to) {
+        toast('La data iniziale è dopo quella finale', 'error');
+        return;
+      }
+      const qs = new URLSearchParams({ format });
+      if (from) qs.set('from', from);
+      if (to) qs.set('to', to);
+      for (const [id, key] of [['#ex-type', 'type'], ['#ex-scope', 'scope'], ['#ex-cat', 'categoryId'], ['#ex-acc', 'accountId']]) {
+        if (val(id)) qs.set(key, val(id));
+      }
+
+      const label = btn.querySelector('span');
+      const original = label.textContent;
+      buttons.forEach((b) => (b.disabled = true));
+      label.textContent = 'Esporto…';
+      try {
+        const res = await fetch(`/api/export/transactions?${qs}`, { credentials: 'same-origin' });
+        if (!res.ok) {
+          let msg = `Esportazione non riuscita (HTTP ${res.status})`;
+          try {
+            msg = (await res.json()).message || msg;
+          } catch {}
+          throw new Error(msg);
+        }
+        const name =
+          /filename="([^"]+)"/.exec(res.headers.get('Content-Disposition') || '')?.[1] || `soldi-movimenti.${format}`;
+        const url = URL.createObjectURL(await res.blob());
+        const a = Object.assign(document.createElement('a'), { href: url, download: name });
+        document.body.appendChild(a);
+        a.click();
+        a.remove();
+        setTimeout(() => URL.revokeObjectURL(url), 10_000);
+      } catch (e) {
+        toast(e.message, 'error');
+      } finally {
+        label.textContent = original;
+        buttons.forEach((b) => (b.disabled = false));
+      }
+    })
+  );
+}
+
 async function viewImpostazioni(main) {
-  let payload, version;
+  let payload, version, categories, accounts;
   try {
-    [payload, version] = await Promise.all([api.backups(), api.version()]);
+    [payload, version, categories, accounts] = await Promise.all([
+      api.backups(),
+      api.version(),
+      api.categories().then((r) => r.categories, () => []),
+      api.accounts().then((r) => r.accounts, () => []),
+    ]);
   } catch (e) {
     main.innerHTML = `<div class="empty">${escapeHtml(e.message)}</div>`;
     return;
@@ -1958,6 +1972,62 @@ async function viewImpostazioni(main) {
 `
           : ''
       }
+
+      <h2 class="section-title">Esporta i dati</h2>
+      <div class="card card-pad" id="export-card">
+        <p class="muted" style="font-size:.9rem;margin-bottom:14px">
+          Scarica i tuoi movimenti in <strong>Excel</strong> o <strong>CSV</strong>. Senza filtri esporti tutto
+          (fino a 50.000 movimenti): restringi il periodo se serve.
+        </p>
+        <div class="row-2">
+          <div class="field"><label for="ex-range">Periodo</label>
+            <select id="ex-range">
+              <option value="all">Tutti i movimenti</option>
+              <option value="year">Quest'anno</option>
+              <option value="lastyear">Anno scorso</option>
+              <option value="3m">Ultimi 3 mesi</option>
+              <optgroup label="Mese">${monthOptions('')}</optgroup>
+              <option value="custom">Personalizzato…</option>
+            </select>
+          </div>
+          <div class="field"><label for="ex-type">Tipo</label>
+            <select id="ex-type">
+              <option value="">Entrate e uscite</option>
+              <option value="expense">Solo uscite</option>
+              <option value="income">Solo entrate</option>
+            </select>
+          </div>
+        </div>
+        <div class="row-2" id="ex-custom" hidden>
+          <div class="field"><label for="ex-from">Dal</label><input type="date" id="ex-from" /></div>
+          <div class="field"><label for="ex-to">Al</label><input type="date" id="ex-to" /></div>
+        </div>
+        <div class="row-2">
+          <div class="field"><label for="ex-scope">Ambito</label>
+            <select id="ex-scope">
+              <option value="">Personale + Casa</option>
+              <option value="personal">Solo personale</option>
+              <option value="home">Solo casa</option>
+            </select>
+          </div>
+          <div class="field"><label for="ex-cat">Categoria</label>
+            <select id="ex-cat">
+              <option value="">Tutte le categorie</option>
+              ${categories.map((c) => `<option value="${c.id}">${escapeHtml(c.name)}</option>`).join('')}
+            </select>
+          </div>
+        </div>
+        <div class="field"><label for="ex-acc">Conto</label>
+          <select id="ex-acc">
+            <option value="">Tutti i conti</option>
+            ${accounts.map((a) => `<option value="${a.id}">${escapeHtml(a.name)}</option>`).join('')}
+          </select>
+        </div>
+        <div style="display:flex;gap:8px;flex-wrap:wrap">
+          <button class="btn primary" type="button" data-fmt="xlsx">${icons.download}<span>Scarica Excel</span></button>
+          <button class="btn" type="button" data-fmt="csv">${icons.download}<span>Scarica CSV</span></button>
+        </div>
+      </div>
 
       <h2 class="section-title">Backup</h2>
       <div class="page-head" style="margin:0 0 12px">
@@ -2015,6 +2085,8 @@ async function viewImpostazioni(main) {
   );
 
   main.querySelector('#imp-logout').addEventListener('click', doLogout);
+
+  bindExport(main);
 
   main.querySelector('#mk-backup').addEventListener('click', async (e) => {
     e.target.disabled = true;

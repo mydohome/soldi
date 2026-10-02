@@ -47,7 +47,7 @@ Funziona da smartphone e da desktop (interfaccia responsive), gira interamente c
 | 📈 **Grafici** | Donut per categoria (con confronto ▲▼ rispetto alla media di 3 mesi) e barre entrate/uscite. SVG originali, nessuna libreria esterna. |
 | 🗄️ **Backup** | CSV automatico ogni settimana + backup manuale on‑demand, **e ripristino**, tutto in **Impostazioni** — ogni utente sui propri dati. |
 | ⬆️ **Aggiornamento dall'app** | In **Impostazioni**, solo per l'**amministratore** (il primo utente creato, o `ADMIN_EMAIL`): controlla e installa l'ultima versione da git (`SELF_UPDATE_ENABLED=true`). |
-| 📤 **Esportazione** | Dalla vista Movimenti, **Esporta** in **Excel (.xlsx)** o **CSV** con i filtri attivi (periodo, tipo, categoria, conto, ambito, ricerca). Solo i tuoi dati, fino a 50.000 righe. |
+| 📤 **Esportazione** | In **Impostazioni → Esporta i dati**: **Excel (.xlsx)** o **CSV** con i filtri a scelta (periodo, tipo, ambito, categoria, conto). Solo i tuoi dati, fino a 50.000 righe. |
 | ♻️ **Ripristino** | Comando singolo che ricarica i dati da un backup CSV. |
 | 🎨 **UI** | Design moderno, tema chiaro/scuro automatico, elementi grafici originali. |
 | 📖 **Guida in-app** | In **Impostazioni → Guida**: come aggiungere movimenti e gestire categorie, conti e spese fisse, con screenshot delle schermate. |
@@ -310,8 +310,9 @@ In NPM: **Forward Hostname** `<IP_DEL_SERVER_SOLDI>`, **Forward Port** `3010`,
   generati hanno il badge «fissa» e restano modificabili. All'avvio l'app recupera i
   mesi/anni arretrati (utile dopo un fermo del server); riattivando una regola **non** si
   recuperano i periodi in cui era spenta.
-- **Movimenti → Esporta** — scarica i movimenti con i filtri della vista (senza periodo: tutti, fino
-  a 50.000). **Excel**: foglio «Movimenti» (Data, Tipo, Importo, Categoria, Conto, Ambito, Nota, Netto,
+- **Impostazioni → Esporta i dati** — scarica i movimenti filtrando per periodo (tutto, anno, mese,
+  ultimi 3 mesi o date a scelta), tipo, ambito, categoria e conto (senza filtri: tutti, fino a
+  50.000). **Excel**: foglio «Movimenti» (Data, Tipo, Importo, Categoria, Conto, Ambito, Nota, Netto,
   Spesa fissa; date e importi veri, intestazione bloccata, filtro automatico) e foglio «Info» con
   filtri applicati e numero di righe. **CSV**: separatore `;`, UTF-8 con BOM, virgola decimale, celle
   che iniziano con `= + - @` precedute da `'` per evitare formule. Se superi il tetto restringi il
