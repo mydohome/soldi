@@ -14,6 +14,50 @@ const KEEP = Number(process.env.BACKUP_KEEP || 8);
 // il backup/ripristino per-utente (vedi restore-user.js).
 const USER_SCOPED_TABLES = TABLES.filter((t) => t.columns.includes('user_id'));
 
+// Il nome di una cartella di backup finisce con il timestamp: AAAA-MM-GG_hh-mm-ss
+// (backup vecchi) o con i millisecondi in più (-mmm). L'ordine cronologico si
+// ricava da lì, non dal nome intero: nei backup personali lo slug dell'utente
+// precede il timestamp e può cambiare. Non si usa una lunghezza fissa: i backup
+// vecchi hanno 19 caratteri di timestamp, i nuovi 23.
+const TIMESTAMP_RE = /(\d{4}-\d{2}-\d{2}_\d{2}-\d{2}-\d{2})(?:-(\d{3}))?$/;
+function backupSortKey(name) {
+  const m = TIMESTAMP_RE.exec(name);
+  return m ? `${m[1]}-${m[2] ?? '000'}` : name;
+}
+const byTimestamp = (a, b) => backupSortKey(a).localeCompare(backupSortKey(b)) || a.localeCompare(b);
+
+// Cartelle 0700 e file 0600 (il backup globale contiene password_hash, tutti
+// contengono dati finanziari). Il chmod esplicito vale anche con una umask
+// permissiva.
+function secureMkdir(dir) {
+  fs.mkdirSync(dir, { mode: 0o700 });
+  fs.chmodSync(dir, 0o700);
+}
+function secureWrite(file, data) {
+  fs.writeFileSync(file, data, { encoding: 'utf8', mode: 0o600 });
+  fs.chmodSync(file, 0o600);
+}
+
+/**
+ * Esegue fn(client) in una transazione REPEATABLE READ di sola lettura: tutte le
+ * tabelle del backup vengono lette dallo stesso istante, anche con scritture
+ * concorrenti (altrimenti movimenti e categorie potrebbero non corrispondere).
+ */
+async function withSnapshot(fn) {
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN ISOLATION LEVEL REPEATABLE READ READ ONLY');
+    const out = await fn(client);
+    await client.query('COMMIT');
+    return out;
+  } catch (e) {
+    await client.query('ROLLBACK');
+    throw e;
+  } finally {
+    client.release();
+  }
+}
+
 // Millisecondi inclusi (non solo i secondi) per evitare che due backup dello
 // stesso utente nello stesso secondo (due chiamate CLI ravvicinate, o un cron
 // e una chiamata manuale che si sovrappongono) finiscano nella stessa cartella.
@@ -40,7 +84,7 @@ function writeTableCsv(dir, table, rows) {
       boolean: (v) => (v ? 'true' : 'false'),
     },
   });
-  fs.writeFileSync(path.join(dir, `${table.name}.csv`), csv, 'utf8');
+  secureWrite(path.join(dir, `${table.name}.csv`), csv);
 }
 
 /**
@@ -51,9 +95,22 @@ function writeTableCsv(dir, table, rows) {
  */
 async function createBackup({ root = BACKUP_ROOT, keep = KEEP, label = 'auto' } = {}) {
   fs.mkdirSync(root, { recursive: true });
+
+  // Letture prima, in un solo snapshot; i file si scrivono dopo.
+  const snapshot = await withSnapshot(async (client) => {
+    const out = [];
+    for (const table of TABLES) {
+      const { rows } = await client.query(
+        `SELECT ${table.columns.join(', ')} FROM ${table.name} ORDER BY ${table.columns[0]}`
+      );
+      out.push({ table, rows });
+    }
+    return out;
+  });
+
   const dirName = `soldi-backup-${timestamp()}`;
   const dir = path.join(root, dirName);
-  fs.mkdirSync(dir);
+  secureMkdir(dir);
 
   const manifest = {
     app: 'soldi',
@@ -63,15 +120,12 @@ async function createBackup({ root = BACKUP_ROOT, keep = KEEP, label = 'auto' } 
     tables: {},
   };
 
-  for (const table of TABLES) {
-    const { rows } = await pool.query(
-      `SELECT ${table.columns.join(', ')} FROM ${table.name} ORDER BY ${table.columns[0]}`
-    );
+  for (const { table, rows } of snapshot) {
     writeTableCsv(dir, table, rows);
     manifest.tables[table.name] = { rows: rows.length, file: `${table.name}.csv` };
   }
 
-  fs.writeFileSync(path.join(dir, 'manifest.json'), JSON.stringify(manifest, null, 2));
+  secureWrite(path.join(dir, 'manifest.json'), JSON.stringify(manifest, null, 2));
 
   pruneOldDirs(root, 'soldi-backup-', keep);
 
@@ -87,9 +141,22 @@ async function createBackup({ root = BACKUP_ROOT, keep = KEEP, label = 'auto' } 
  */
 async function createUserBackup({ userId, email, root = BACKUP_ROOT, keep = KEEP, label = 'manual' }) {
   fs.mkdirSync(root, { recursive: true });
+
+  const snapshot = await withSnapshot(async (client) => {
+    const out = [];
+    for (const table of USER_SCOPED_TABLES) {
+      const { rows } = await client.query(
+        `SELECT ${table.columns.join(', ')} FROM ${table.name} WHERE user_id = $1 ORDER BY ${table.columns[0]}`,
+        [userId]
+      );
+      out.push({ table, rows });
+    }
+    return out;
+  });
+
   const dirName = `${userBackupPrefix(userId)}${usernameSlug(email)}-${timestamp()}`;
   const dir = path.join(root, dirName);
-  fs.mkdirSync(dir);
+  secureMkdir(dir);
 
   const manifest = {
     app: 'soldi',
@@ -102,16 +169,12 @@ async function createUserBackup({ userId, email, root = BACKUP_ROOT, keep = KEEP
     tables: {},
   };
 
-  for (const table of USER_SCOPED_TABLES) {
-    const { rows } = await pool.query(
-      `SELECT ${table.columns.join(', ')} FROM ${table.name} WHERE user_id = $1 ORDER BY ${table.columns[0]}`,
-      [userId]
-    );
+  for (const { table, rows } of snapshot) {
     writeTableCsv(dir, table, rows);
     manifest.tables[table.name] = { rows: rows.length, file: `${table.name}.csv` };
   }
 
-  fs.writeFileSync(path.join(dir, 'manifest.json'), JSON.stringify(manifest, null, 2));
+  secureWrite(path.join(dir, 'manifest.json'), JSON.stringify(manifest, null, 2));
 
   pruneOldDirs(root, userBackupPrefix(userId), keep);
 
@@ -130,7 +193,7 @@ function listUserBackups(userId, root = BACKUP_ROOT) {
     .readdirSync(root, { withFileTypes: true })
     .filter((e) => e.isDirectory() && e.name.startsWith(prefix))
     .map((e) => e.name)
-    .sort();
+    .sort(byTimestamp);
 }
 
 function pruneOldDirs(root, prefix, keep) {
@@ -139,7 +202,7 @@ function pruneOldDirs(root, prefix, keep) {
     .readdirSync(root, { withFileTypes: true })
     .filter((e) => e.isDirectory() && e.name.startsWith(prefix))
     .map((e) => e.name)
-    .sort();
+    .sort(byTimestamp);
   const excess = entries.slice(0, Math.max(0, entries.length - keep));
   for (const name of excess) {
     fs.rmSync(path.join(root, name), { recursive: true, force: true });
@@ -154,4 +217,6 @@ module.exports = {
   userBackupPrefix,
   USER_SCOPED_TABLES,
   BACKUP_ROOT,
+  byTimestamp,
+  withSnapshot,
 };

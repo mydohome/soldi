@@ -4,24 +4,28 @@
 // user:backup`). Sostituisce SOLO i dati di quell'utente — gli altri utenti
 // non vengono toccati.
 //   docker compose exec web npm run user:restore -- mario@esempio.it --latest
-//   docker compose exec web npm run user:restore -- mario@esempio.it soldi-user-backup-3-2026-01-05_03-00-00
+//   docker compose exec web npm run user:restore -- mario@esempio.it soldi-user-backup-3-mario-2026-01-05_03-00-00
+// Un backup di un altro utente si ripristina solo con --force.
 
 require('dotenv').config();
 const { pool, query } = require('../db/pool');
 const { normalizeUsername } = require('../auth/users');
 const { confirm } = require('../backup/confirm');
-const { resolveUserBackupDir, readManifest, restoreUserBackup } = require('../backup/restore-user');
+const { resolveUserBackupDir, readManifest, assertBackupOwner, restoreUserBackup } = require('../backup/restore-user');
 
 (async () => {
   try {
-    const email = process.argv[2];
-    if (!email) throw new Error('Uso: npm run user:restore -- <email o nome utente> [--latest|nome-cartella]');
+    // --force e --yes sono flag, non argomenti posizionali (--latest invece è il valore del secondo).
+    const force = process.argv.includes('--force');
+    const [email, dirArg] = process.argv.slice(2).filter((a) => a !== '--force' && a !== '--yes');
+    if (!email) throw new Error('Uso: npm run user:restore -- <email o nome utente> [--latest|nome-cartella] [--force]');
     const mail = normalizeUsername(email);
     const { rows } = await query('SELECT id, email FROM users WHERE email = $1', [mail]);
     if (!rows[0]) throw new Error(`Nessun utente con email ${mail}`);
     const userId = rows[0].id;
 
-    const dir = resolveUserBackupDir(userId, process.argv[3]);
+    const dir = resolveUserBackupDir(userId, dirArg);
+    assertBackupOwner(dir, userId, { force }); // prima della conferma
     const manifest = readManifest(dir);
 
     console.log(`\n[restore-user] utente: ${rows[0].email} (id ${userId})`);
@@ -40,7 +44,7 @@ const { resolveUserBackupDir, readManifest, restoreUserBackup } = require('../ba
       return;
     }
 
-    const summary = await restoreUserBackup({ userId, dir });
+    const summary = await restoreUserBackup({ userId, dir, force });
     console.log(`\n✓ Dati di ${rows[0].email} ripristinati:`);
     for (const [name, count] of Object.entries(summary)) console.log(`    ${name}: ${count} righe`);
   } catch (err) {

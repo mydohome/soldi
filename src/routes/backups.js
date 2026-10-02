@@ -7,7 +7,7 @@ const { z } = require('zod');
 
 const { requireAuth } = require('../auth/middleware');
 const { handler, httpError } = require('../http/validate');
-const { createUserBackup, listUserBackups, BACKUP_ROOT } = require('../backup/backup-core');
+const { createUserBackup, listUserBackups, byTimestamp, BACKUP_ROOT } = require('../backup/backup-core');
 const { readManifest, restoreUserBackup } = require('../backup/restore-user');
 
 const router = express.Router();
@@ -52,7 +52,7 @@ function listMyBackups(userId) {
         tables: manifest?.tables || null,
       };
     })
-    .sort((a, b) => (a.name < b.name ? 1 : -1));
+    .sort((a, b) => byTimestamp(b.name, a.name));
 }
 
 router.get(

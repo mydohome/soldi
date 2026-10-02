@@ -6,7 +6,7 @@ const fs = require('fs');
 const path = require('path');
 const { pool, withTransaction } = require('../db/pool');
 const TABLES = require('./tables');
-const { BACKUP_ROOT } = require('./backup-core');
+const { BACKUP_ROOT, byTimestamp } = require('./backup-core');
 const { readTableCsv } = require('./csv-table');
 const { confirm } = require('./confirm');
 
@@ -21,7 +21,7 @@ function resolveBackupDir(arg) {
     .readdirSync(BACKUP_ROOT, { withFileTypes: true })
     .filter((e) => e.isDirectory() && e.name.startsWith('soldi-backup-'))
     .map((e) => e.name)
-    .sort();
+    .sort(byTimestamp);
   if (candidates.length === 0) throw new Error(`No backups found under ${BACKUP_ROOT}`);
   return path.join(BACKUP_ROOT, candidates[candidates.length - 1]);
 }
