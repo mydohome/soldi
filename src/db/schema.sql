@@ -152,6 +152,20 @@ BEGIN
   END IF;
 END $$;
 
+-- Una voce annuale deve avere il mese. NOT VALID: i dati storici già incoerenti
+-- non bloccano l'avvio, ma ogni nuovo INSERT/UPDATE deve rispettare il vincolo.
+DO $$
+BEGIN
+  IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'recurring_yearly_month_check') THEN
+    ALTER TABLE recurring_rules ADD CONSTRAINT recurring_yearly_month_check
+      CHECK (cadence <> 'yearly' OR month IS NOT NULL) NOT VALID;
+  END IF;
+  IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'planned_yearly_month_check') THEN
+    ALTER TABLE planned_expenses ADD CONSTRAINT planned_yearly_month_check
+      CHECK (cadence <> 'yearly' OR month IS NOT NULL) NOT VALID;
+  END IF;
+END $$;
+
 -- One generated movimento per rule per month. The ::timestamp cast forces the
 -- IMMUTABLE date_trunc overload (the date/timestamptz one is only STABLE).
 CREATE UNIQUE INDEX IF NOT EXISTS uq_tx_rule_month

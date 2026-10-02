@@ -5,13 +5,12 @@ const { z } = require('zod');
 
 const { query } = require('../db/pool');
 const { requireAuth } = require('../auth/middleware');
-const { handler, httpError } = require('../http/validate');
+const { handler, httpError, isoDate } = require('../http/validate');
+const { assertCategory, categoryPairChanged } = require('../http/category-check');
 const { buildSuggestions } = require('../transactions/suggest');
 
 const router = express.Router();
 router.use(requireAuth);
-
-const isoDate = z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'Data non valida (YYYY-MM-DD)');
 
 const txInput = z.object({
   type: z.enum(['expense', 'income']),
@@ -165,7 +164,7 @@ router.post(
   '/',
   handler(async (req, res) => {
     const input = txInput.parse(req.body);
-    await assertOwned('categories', 'category', req.user.id, input.categoryId ?? null);
+    await assertCategory(req.user.id, input.categoryId ?? null, input.type);
     await assertOwned('accounts', 'account', req.user.id, input.accountId ?? null);
 
     const inserted = await query(
@@ -195,7 +194,17 @@ router.patch(
     const id = z.coerce.number().int().positive().parse(req.params.id);
     const patch = txInput.partial().parse(req.body);
     if (Object.keys(patch).length === 0) throw httpError(400, 'empty_patch', 'Nessun campo da aggiornare');
-    if ('categoryId' in patch) await assertOwned('categories', 'category', req.user.id, patch.categoryId ?? null);
+    if ('type' in patch || 'categoryId' in patch) {
+      // Si valida la coppia effettiva (tipo, categoria) solo se uno dei due cambia davvero:
+      // così un dato storico incoerente non blocca la modifica degli altri campi.
+      const cur = await query('SELECT type, category_id FROM transactions WHERE id = $1 AND user_id = $2', [id, req.user.id]);
+      if (cur.rowCount === 0) throw httpError(404, 'not_found', 'Movimento non trovato');
+      const next = {
+        type: patch.type ?? cur.rows[0].type,
+        categoryId: 'categoryId' in patch ? patch.categoryId ?? null : cur.rows[0].category_id,
+      };
+      if (categoryPairChanged(cur.rows[0], next)) await assertCategory(req.user.id, next.categoryId, next.type);
+    }
     if ('accountId' in patch) await assertOwned('accounts', 'account', req.user.id, patch.accountId ?? null);
 
     const updated = await query(

@@ -10,7 +10,7 @@ const { handler } = require('../http/validate');
 const router = express.Router();
 router.use(requireAuth);
 
-const isoDate = z.string().regex(/^\d{4}-\d{2}-\d{2}$/);
+const { isoDate } = require('../http/validate');
 const scopeParam = z.enum(['personal', 'home']).optional();
 const euros = (cents) => Number(cents || 0) / 100;
 

@@ -6,6 +6,7 @@ const { z } = require('zod');
 const { query } = require('../db/pool');
 const { requireAuth } = require('../auth/middleware');
 const { handler, httpError } = require('../http/validate');
+const { assertCategory } = require('../http/category-check');
 
 const router = express.Router();
 router.use(requireAuth);
@@ -50,12 +51,6 @@ const SELECT_PLANNED = `
   FROM planned_expenses p
   LEFT JOIN categories c ON c.id = p.category_id`;
 
-async function assertCategoryOwned(userId, categoryId) {
-  if (categoryId == null) return;
-  const f = await query('SELECT 1 FROM categories WHERE id = $1 AND user_id = $2', [categoryId, userId]);
-  if (f.rowCount === 0) throw httpError(400, 'bad_category', 'Categoria non valida');
-}
-
 router.get(
   '/',
   handler(async (req, res) => {
@@ -71,7 +66,8 @@ router.post(
   '/',
   handler(async (req, res) => {
     const input = plannedInput.parse(req.body);
-    await assertCategoryOwned(req.user.id, input.categoryId ?? null);
+    // Le voci previste sono spese: la UI offre solo categorie di spesa.
+    await assertCategory(req.user.id, input.categoryId ?? null, 'expense');
     const inserted = await query(
       `INSERT INTO planned_expenses
          (user_id, name, category_id, scope, amount_cents, cadence, month, active, note)
@@ -100,7 +96,14 @@ router.patch(
     const id = z.coerce.number().int().positive().parse(req.params.id);
     const patch = plannedInput.partial().parse(req.body);
     if (Object.keys(patch).length === 0) throw httpError(400, 'empty_patch', 'Nessun campo da aggiornare');
-    if ('categoryId' in patch) await assertCategoryOwned(req.user.id, patch.categoryId ?? null);
+    if ('categoryId' in patch) {
+      const cur = await query('SELECT category_id FROM planned_expenses WHERE id = $1 AND user_id = $2', [id, req.user.id]);
+      if (cur.rowCount === 0) throw httpError(404, 'not_found', 'Voce non trovata');
+      // Solo se la categoria cambia: un dato storico incoerente non blocca le altre modifiche.
+      if (String(patch.categoryId ?? '') !== String(cur.rows[0].category_id ?? '')) {
+        await assertCategory(req.user.id, patch.categoryId ?? null, 'expense');
+      }
+    }
 
     const updated = await query(
       `UPDATE planned_expenses
