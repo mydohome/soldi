@@ -303,7 +303,7 @@ In NPM: **Forward Hostname** `<IP_DEL_SERVER_SOLDI>`, **Forward Port** `3010`,
 - **Spese fisse** — regole ricorrenti (mutuo, rata, abbonamento, stipendio…), **ogni mese oppure
   una volta l'anno** in un mese scelto, con **durata opzionale**: attivando "Durata limitata"
   imposti il numero di rate/occorrenze e, raggiunto il limite, la regola si disattiva da sola
-  (la lista mostra l'avanzamento, es. `3/12 rate`). A differenza delle voci previste, creano
+  (la lista mostra una **barra di avanzamento** con «Rata 3 di 12», il **residuo** da pagare e il versato). A differenza delle voci previste, creano
   un **movimento vero**, il giorno scelto, finché la regola è **attiva**. Lo switch nella lista
   la disattiva senza toccare lo storico; «Esegui adesso» forza il controllo. I movimenti
   generati hanno il badge «fissa» e restano modificabili. All'avvio l'app recupera i
