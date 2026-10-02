@@ -57,8 +57,11 @@ async function generateDue({ userId, now = new Date() } = {}) {
     await client.query('BEGIN');
 
     const { rows: rules } = await client.query(
+      // Una regola annuale senza mese (dato storico incoerente) non genera mai nulla
+      // e il suo UPDATE violerebbe recurring_yearly_month_check: farebbe fallire
+      // la generazione di tutti gli utenti. Si salta.
       `SELECT * FROM recurring_rules
-       WHERE active = true ${userId ? 'AND user_id = $1' : ''}
+       WHERE active = true AND NOT (cadence = 'yearly' AND month IS NULL) ${userId ? 'AND user_id = $1' : ''}
        FOR UPDATE`,
       userId ? [userId] : []
     );

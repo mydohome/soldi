@@ -64,6 +64,27 @@ router.patch(
     const patch = categoryInput.partial().parse(req.body);
     if (Object.keys(patch).length === 0) throw httpError(400, 'empty_patch', 'Nessun campo da aggiornare');
 
+    // Cambiare tipo (spesa/entrata) a una categoria già usata la renderebbe
+    // incompatibile con i suoi movimenti: si rifiuta. Nome, colore e ambito restano liberi.
+    if (patch.kind) {
+      const cur = await query('SELECT kind FROM categories WHERE id = $1 AND user_id = $2', [id, req.user.id]);
+      if (cur.rowCount === 0) throw httpError(404, 'not_found', 'Categoria non trovata');
+      if (cur.rows[0].kind !== patch.kind) {
+        const used = await query(
+          `SELECT
+             (SELECT COUNT(*) FROM transactions WHERE category_id = $1 AND user_id = $2 AND type <> $3::text)
+           + (SELECT COUNT(*) FROM recurring_rules WHERE category_id = $1 AND user_id = $2 AND type <> $3::text)
+           + CASE WHEN $3::text <> 'expense'
+                  THEN (SELECT COUNT(*) FROM planned_expenses WHERE category_id = $1 AND user_id = $2)
+                  ELSE 0 END AS n`,
+          [id, req.user.id, patch.kind]
+        );
+        if (Number(used.rows[0].n) > 0) {
+          throw httpError(409, 'category_in_use', 'La categoria ha movimenti o spese fisse di tipo diverso');
+        }
+      }
+    }
+
     try {
       const updated = await query(
         `UPDATE categories
