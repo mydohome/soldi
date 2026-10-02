@@ -4,7 +4,7 @@ const fs = require('fs');
 const path = require('path');
 const { withTransaction } = require('../db/pool');
 const { readTableCsv } = require('./csv-table');
-const { BACKUP_ROOT, USER_SCOPED_TABLES, userBackupPrefix } = require('./backup-core');
+const { BACKUP_ROOT, USER_SCOPED_TABLES, userBackupPrefix, byTimestamp } = require('./backup-core');
 
 // Ordine di cancellazione: figli prima dei genitori. Non è strettamente
 // necessario (le FK sono ON DELETE SET NULL, non CASCADE), ma evita di
@@ -33,7 +33,7 @@ function resolveUserBackupDir(userId, arg, root = BACKUP_ROOT) {
         .readdirSync(root, { withFileTypes: true })
         .filter((e) => e.isDirectory() && e.name.startsWith(prefix))
         .map((e) => e.name)
-        .sort()
+        .sort(byTimestamp)
     : [];
   if (candidates.length === 0) {
     throw new Error(`Nessun backup personale trovato per questo utente sotto ${root}`);
@@ -44,6 +44,21 @@ function resolveUserBackupDir(userId, arg, root = BACKUP_ROOT) {
 function readManifest(dir) {
   const manifestPath = path.join(dir, 'manifest.json');
   return fs.existsSync(manifestPath) ? JSON.parse(fs.readFileSync(manifestPath, 'utf8')) : null;
+}
+
+/**
+ * Il backup deve essere personale e, salvo force, dell'utente su cui si
+ * ripristina: insertUserRows forza user_id, quindi ripristinare il backup di
+ * un altro utente copierebbe i suoi dati su questo account.
+ */
+function assertBackupOwner(dir, userId, { force = false } = {}) {
+  const m = readManifest(dir);
+  if (!m || m.kind !== 'user') throw new Error('Non è un backup personale.');
+  if (!force && String(m.userId) !== String(userId)) {
+    throw new Error(
+      `Il backup è di ${m.email} (id ${m.userId}). Usa --force per ripristinarlo su questo account.`
+    );
+  }
 }
 
 /** old id (stringa, dal CSV) → nuovo id assegnato dal DB. undefined/null → null (riferimento perso). */
@@ -103,7 +118,8 @@ async function insertUserRows(client, tableName, { columns, rows }, { userId, fk
  * le FK interne (categoria/conto/regola ricorrente) rimappate di conseguenza.
  * Non tocca in alcun modo i dati degli altri utenti.
  */
-async function restoreUserBackup({ userId, dir }) {
+async function restoreUserBackup({ userId, dir, force = false }) {
+  assertBackupOwner(dir, userId, { force });
   const parsed = {};
   for (const table of USER_SCOPED_TABLES) {
     parsed[table.name] = readTableCsv(dir, table);
@@ -139,4 +155,4 @@ async function restoreUserBackup({ userId, dir }) {
   return restored;
 }
 
-module.exports = { resolveUserBackupDir, readManifest, restoreUserBackup };
+module.exports = { resolveUserBackupDir, readManifest, assertBackupOwner, restoreUserBackup };

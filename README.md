@@ -417,6 +417,18 @@ docker compose exec web npm run user:restore -- mario --latest
 docker compose exec web npm run user:restore -- mario soldi-user-backup-3-mario-2026-01-05_03-00-00
 ```
 
+Un backup personale si ripristina solo sull'**utente a cui appartiene**: il comando
+controlla `manifest.json` e, se il backup è di un altro utente, si ferma e dice di chi è.
+Per copiare di proposito i dati di un utente su un altro account (es. migrare da un nome
+utente a un altro) aggiungi `--force`:
+
+```bash
+docker compose exec web npm run user:restore -- anna soldi-user-backup-3-mario-2026-01-05_03-00-00-000 --force
+```
+
+Una cartella che non è un backup personale (per esempio un backup globale) viene sempre
+rifiutata, anche con `--force`. I flag `--force` e `--yes` possono stare in qualsiasi posizione.
+
 Anche dal [menu interattivo](#menu-interattivo-consigliato) (`user:manage`),
 voci **5** e **6** per l'utente scelto. Il ripristino **rigenera gli ID**
 (categorie, conti, spese fisse, movimenti): sono globali e condivisi con gli
@@ -479,7 +491,15 @@ Questa cartella è montata sul tuo computer in **`./backups`** (vedi `docker-com
 quindi i file CSV sono subito accessibili e copiabili altrove (disco esterno, cloud…).
 
 Vengono conservati gli ultimi `BACKUP_KEEP` backup globali, e gli ultimi `BACKUP_KEEP` per
-ogni singolo utente; i più vecchi sono eliminati automaticamente.
+ogni singolo utente; i più vecchi sono eliminati automaticamente. «Più vecchi» si decide dal
+**timestamp** nel nome della cartella, non dall'ordine alfabetico. Tutte le tabelle di un
+backup sono lette nello stesso istante (transazione `REPEATABLE READ`), quindi movimenti e
+categorie sono sempre coerenti tra loro anche se qualcuno sta scrivendo.
+
+Cartelle `0700` e file `0600`: contengono dati finanziari (e, nel globale, gli hash delle
+password). Il processo nel container gira come utente `node` (uid 1000): sull'host la
+cartella `./backups` è leggibile solo dal proprietario di quell'uid (su Ubuntu/Debian di solito
+il primo utente). I backup creati prima di questa modifica mantengono i vecchi permessi.
 
 **Backup manuale** da terminale:
 
@@ -606,6 +626,12 @@ I numeri devono coincidere con quelli nel `manifest.json` del backup.
 - Le sequenze degli ID vengono riallineate automaticamente dopo l'import.
 - Senza `--yes` il comando `npm run restore` chiede conferma interattiva (digita `yes`).
 - Il formato è CSV standard: in caso estremo puoi importare i file a mano con `psql \copy`.
+- **Conserva `SECRETS_KEY` con la stessa cura dei backup** (ma in un posto diverso da
+  `./backups`, altrimenti la cifratura non serve a nulla): `telegram_settings.csv` contiene
+  bot token e chat id cifrati con quella chiave. Ripristinando su un'altra macchina con una
+  `SECRETS_KEY` diversa i valori diventano illeggibili e vanno reimpostati con
+  `npm run user:telegram … set`. Stessa regola per `JWT_SECRET`, se vuoi che le sessioni
+  restino valide.
 
 ---
 
