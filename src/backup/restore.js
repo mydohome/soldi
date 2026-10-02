@@ -33,12 +33,35 @@ async function main() {
     ? JSON.parse(fs.readFileSync(manifestPath, 'utf8'))
     : null;
 
+  // Un backup personale contiene solo i dati di un utente: ripristinarlo qui
+  // svuoterebbe tutti gli altri.
+  if (manifest && manifest.kind === 'user') {
+    throw new Error(
+      `${dir} è un backup personale (utente ${manifest.email || manifest.userId}): ` +
+        'per ripristinarlo usa `npm run user:restore -- <email> <cartella>`.'
+    );
+  }
+
+  // I CSV si leggono PRIMA della conferma, così si può validare e mostrare cosa
+  // verrà davvero scritto (anche per backup senza manifest).
+  const parsed = TABLES.map((table) => {
+    const { columns, rows } = readTableCsv(dir, table);
+    return { table, columns, rows };
+  });
+
+  // Il ripristino globale parte da un TRUNCATE di tutto: senza utenti nel
+  // backup (cartella sbagliata, CSV mancanti) lascerebbe il database vuoto.
+  const usersRows = parsed.find((p) => p.table.name === 'users').rows;
+  if (usersRows.length === 0) {
+    throw new Error('users.csv assente o vuoto: rifiuto di svuotare il database.');
+  }
+
   console.log(`\n[restore] source: ${dir}`);
-  if (manifest) {
-    console.log(`[restore] created: ${manifest.createdAt} (label: ${manifest.label})`);
-    for (const [name, info] of Object.entries(manifest.tables)) {
-      console.log(`[restore]   ${name}: ${info.rows} rows`);
-    }
+  if (manifest) console.log(`[restore] created: ${manifest.createdAt} (label: ${manifest.label})`);
+  for (const { table, rows } of parsed) {
+    const expected = manifest?.tables?.[table.name]?.rows;
+    const flag = expected != null && expected !== rows.length ? `  (manifest: ${expected} — DIVERSO)` : '';
+    console.log(`[restore]   ${table.name}: ${rows.length} rows${flag}`);
   }
   console.log('\n[restore] This REPLACES all current data in the database.');
 
@@ -48,11 +71,6 @@ async function main() {
     await pool.end();
     return;
   }
-
-  const parsed = TABLES.map((table) => {
-    const { columns, rows } = readTableCsv(dir, table);
-    return { table, columns, rows };
-  });
 
   await withTransaction(async (client) => {
     await client.query(
@@ -95,6 +113,21 @@ async function main() {
         );
       }
       console.log(`[restore]   ${table.name}: ${rows.length} rows restored`);
+    }
+
+    // Prima del commit: se un CSV è troncato o mancante le righe inserite non
+    // corrispondono al manifest e la transazione torna indietro (dati intatti).
+    if (manifest && manifest.tables) {
+      for (const { table } of parsed) {
+        const expected = manifest.tables[table.name]?.rows;
+        if (expected == null) continue;
+        const {
+          rows: [r],
+        } = await client.query(`SELECT COUNT(*)::int AS n FROM ${table.name}`);
+        if (r.n !== expected) {
+          throw new Error(`${table.name}: attese ${expected} righe, trovate ${r.n}`);
+        }
+      }
     }
   });
 
