@@ -129,8 +129,8 @@ class Client {
 }
 
 /** Registra un utente nuovo (con categorie e conti di default) e ritorna un client autenticato. */
-async function registerUser(base, tag = 'u') {
-  const email = uniqueEmail(tag);
+async function registerUser(base, tag = 'u', fixedEmail = null) {
+  const email = fixedEmail || uniqueEmail(tag);
   const res = await fetch(`${base}/api/auth/register`, {
     method: 'POST',
     headers: { 'content-type': 'application/json' },

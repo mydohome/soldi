@@ -7,6 +7,7 @@ const express = require('express');
 
 const { requireAuth } = require('../auth/middleware');
 const { handler, httpError } = require('../http/validate');
+const { isAdmin, requireAdmin } = require('../auth/admin');
 
 const router = express.Router();
 router.use(requireAuth);
@@ -44,6 +45,7 @@ router.get(
       committedAt: null,
       repoAvailable: repoAvailable(),
       selfUpdateEnabled: SELF_UPDATE,
+      isAdmin: await isAdmin(req.user.id),
     };
     if (out.repoAvailable) {
       try {
@@ -58,8 +60,11 @@ router.get(
   })
 );
 
+// check-update e update riguardano tutta l'installazione (git fetch/pull e
+// riavvio per tutti gli utenti): solo l'amministratore. /version resta per tutti.
 router.get(
   '/check-update',
+  requireAdmin,
   handler(async (req, res) => {
     if (!repoAvailable()) return res.json({ supported: false, reason: 'no_repo_mount' });
     try {
@@ -97,6 +102,7 @@ router.get(
  */
 router.post(
   '/update',
+  requireAdmin,
   handler(async (req, res) => {
     if (!SELF_UPDATE) {
       throw httpError(

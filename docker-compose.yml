@@ -60,6 +60,8 @@ services:
       # Aggiornamento dall'app (Impostazioni → Aggiorna). true = attivo.
       # Richiede i mount qui sotto: fa `git pull` + riavvio, senza rebuild dell'immagine.
       SELF_UPDATE_ENABLED: ${SELF_UPDATE_ENABLED:-false}
+      # Amministratore (può aggiornare dall'app). Vuota = il primo utente creato.
+      ADMIN_EMAIL: ${ADMIN_EMAIL:-}
       # Cifra i segreti applicativi (credenziali Telegram) salvati nel DB.
       # Necessaria solo per `npm run user:telegram`. openssl rand -hex 32
       SECRETS_KEY: ${SECRETS_KEY:-}
