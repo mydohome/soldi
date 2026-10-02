@@ -16,6 +16,10 @@ Non hai un PostgreSQL locale? Usa Docker: `docker compose up -d db`.
 ## Prima di aprire una PR
 
 - `npm test` deve passare (controlla la sintassi di tutti i file sorgente).
+- `npm run test:integration` avvia il server vero contro un Postgres di **test**
+  (variabili `PG*`, default `soldi`/`soldi` su `127.0.0.1`, database `soldi_test`).
+  Rifiuta di girare se il nome del database non contiene «test»: alcuni test
+  svuotano le tabelle. In CI gira su un servizio Postgres dedicato.
 - Mantieni lo stile del codice circostante: niente framework, niente step di build
   lato client, query SQL sempre parametrizzate.
 - Un commit = un cambiamento coerente. Messaggi in italiano o inglese, va bene entrambi.

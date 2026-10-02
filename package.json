@@ -11,6 +11,7 @@
     "start": "node src/server.js",
     "dev": "node --watch src/server.js",
     "test": "node scripts/check.js",
+    "test:integration": "node --test --test-concurrency=1 tests/*.test.js",
     "migrate": "node src/db/migrate.js",
     "backup": "node src/backup/run-backup.js",
     "restore": "node src/backup/restore.js",
