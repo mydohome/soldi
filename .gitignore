@@ -8,3 +8,10 @@ coverage/
 # Local backup output (keep the folder, ignore its contents)
 backups/*
 !backups/.gitkeep
+
+# Strumenti di gestione (ops/): stato, segreti e lock locali
+ops-state/
+ops.env
+.update.lock
+.*.lock
+.*.lock.d
