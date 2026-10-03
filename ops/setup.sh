@@ -15,10 +15,13 @@
 # volume db-data esiste già (POSTGRES_PASSWORD vale solo alla prima inizializzazione:
 # cambiarla romperebbe l'accesso al database).
 #
+#   6. propone di pianificare i backup (soldi backup-plan): rileva gli altri job della macchina,
+#      propone orari liberi e sistema il crontab
+#
 # Per l'automazione: SETUP_STDIN=1 legge le risposte da stdin anche senza terminale.
 #
 # Uso: setup.sh [--home <cartella>] [--scenario 1|2|3|4] [--tz <fuso>] [--yes]
-#                [--no-start] [--skip-user] [--ops-env]
+#                [--no-start] [--skip-user] [--ops-env] [--plan-backups | --no-plan]
 #   scenari: 1 = in LAN/locale (HTTP) · 2 = dietro proxy sullo stesso host (porta solo locale)
 #            3 = dietro proxy su rete Docker (docker-compose.npm.yml) · 4 = proxy su un altro host
 set -euo pipefail
@@ -30,7 +33,7 @@ OPS_DIR="$(cd "$(dirname "$SELF")" && pwd)"
 # shellcheck source=ops/lib.sh
 . "$OPS_DIR/lib.sh"
 
-HOME_ARG=""; SCENARIO=""; TZ_ARG=""; YES=0; NO_START=0; SKIP_USER=0; DO_OPS_ENV=0
+HOME_ARG=""; SCENARIO=""; TZ_ARG=""; YES=0; NO_START=0; SKIP_USER=0; DO_OPS_ENV=0; PLAN=ask
 while [ $# -gt 0 ]; do
   case "$1" in
     --home) HOME_ARG="${2:-}"; shift 2 ;;
@@ -40,6 +43,8 @@ while [ $# -gt 0 ]; do
     --no-start) NO_START=1; shift ;;
     --skip-user) SKIP_USER=1; shift ;;
     --ops-env) DO_OPS_ENV=1; shift ;;
+    --plan-backups) PLAN=yes; shift ;;
+    --no-plan) PLAN=no; shift ;;
     -h|--help) sed -n '2,24p' "$SELF" | sed 's/^# \{0,1\}//'; exit 0 ;;
     *) die "Argomento sconosciuto: $1" ;;
   esac
@@ -214,10 +219,17 @@ if [ "$DO_OPS_ENV" = 1 ] || { [ ! -f "$OPS_ENV_FILE" ] && interactive && yesno "
   fi
 fi
 
+# --- pianificazione dei backup (rileva gli altri job della macchina e propone orari liberi) ---
+if [ "$PLAN" = ask ] && interactive && yesno "Pianificare ora i backup (consigliato: propongo orari liberi guardando gli altri job della macchina)?" s; then PLAN=yes; fi
+if [ "$PLAN" = yes ]; then
+  plan_args=(--home "$COMPOSE_DIR"); [ "$YES" != 1 ] || plan_args+=(--yes)
+  PLAN_STDIN="${SETUP_STDIN:-}" "$OPS_DIR/backup-plan.sh" "${plan_args[@]}" || warn "Pianificazione non completata: riprova con  soldi backup-plan"
+fi
+
 cat >&2 <<TXT
 
 Fatto. Prossimi passi consigliati:
-  soldi cron install      # pianifica backup, controlli e sorveglianza
+  soldi backup-plan       # sceglie giorni e orari dei backup e sistema il crontab (se non l'hai già fatto)
   soldi backup            # primo backup (applicativo + dump)
   soldi notify-test       # prova delle notifiche, se le hai configurate
   soldi restore-test      # prova di ripristino

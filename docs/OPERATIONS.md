@@ -39,6 +39,7 @@ ln -s app/ops/soldi ./soldi
 | `soldi status` | quadro d'insieme: container, versione, età di backup/dump/copia fuori macchina/prova di ripristino, disco, diagnostica, avvisi |
 | `soldi setup` | installazione guidata (genera il `.env` con segreti casuali, avvia lo stack) |
 | `soldi diag [--json]` | diagnostica del database e della configurazione (sola lettura) |
+| `soldi backup-plan` | sceglie giorni e orari dei backup (rileva gli altri job della macchina, propone orari liberi) e sistema il crontab |
 | `soldi cron print\|install\|remove` | pianificazione di watch, backup, controlli e prova di ripristino |
 | `soldi user [list\|create\|password\|telegram\|backup\|restore\|manage]` | gestione utenti (`npm run user:*` nel container web) |
 | `soldi backup` | backup completo: applicativo + dump PostgreSQL + copia fuori macchina |
@@ -237,9 +238,8 @@ Nell'ordine, da `~/docker/soldi` (cartella di deploy; `app/` è il checkout git)
 6. **Prova di ripristino, prima in locale e poi dalla copia remota**: `./soldi restore-test` e
    `./soldi restore-test --from-offsite`. Entrambe devono riuscire: solo allora la copia fuori macchina è
    dimostrata.
-7. **Pianifica**: `./soldi cron install` (watch ogni 5 minuti, backup alle 02:30, controllo alle 08:00,
-   prova di ripristino il primo domenica del mese; con restic configurato usa `--from-offsite`).
-   Verifica con `crontab -l`.
+7. **Pianifica**: `./soldi backup-plan` (vedi [sotto](#pianificazione-dei-backup-soldi-backup-plan)): guarda gli
+   altri job della macchina, propone orari liberi e installa il crontab. Verifica con `crontab -l`.
 8. **Controllo finale**: `./soldi check` deve uscire con 0 e `./soldi status` non mostrare avvisi.
    Dopo il primo giro notturno guarda `ops-state/backup.log` e `ops-state/*.json`.
 9. Facoltativo ma consigliato: un check esterno (healthchecks.io) con `HC_PING_URL_*` in `ops.env`, per
@@ -367,9 +367,37 @@ presenti restano) e **rifiuta di rigenerare `PGPASSWORD` se il volume `db-data` 
 Poi crea `proxy-net` se serve, avvia lo stack, attende lo stato sano e propone di creare il primo utente e,
 facoltativamente, `ops.env`.
 
+### Pianificazione dei backup: `soldi backup-plan`
+
+Script interattivo (con proposte già pronte: basta Invio) che decide **quando** far girare i backup e poi
+sistema il crontab. Si lancia da solo anche da `soldi setup`, alla prima installazione, e si può rilanciare
+quando vuoi.
+
+1. **Rileva che cosa gira già sulla macchina**: il tuo crontab (escluso il blocco di Soldi), `/etc/crontab`,
+   `/etc/cron.d/*` (con campo utente, anche `@daily`/`@weekly`) e il backup interno dell'app (`BACKUP_CRON`),
+   e li elenca con ora e giorni, marcando quelli che sembrano backup. I timer di systemd con nomi simili sono
+   solo segnalati. Gli intervalli (`*/5`) non occupano uno slot.
+2. **Propone un orario libero**: tra le 01:00 e le 05:30, il più vicino alle 03:15 fra quelli ad **almeno 90
+   minuti** da ogni altro job che gira negli stessi giorni (se non c'è, il più lontano possibile); spiega a
+   quanti minuti è il job più vicino. Se scegli un orario a meno di 45 minuti da un altro job, ti avvisa.
+3. **Giorni**: «tutti» (consigliato: perdita massima 24 ore) oppure per esempio `lun,mer,ven`; con meno giorni
+   ricorda che la perdita massima diventa l'intervallo più lungo.
+4. **Conservazione**: dump da tenere (`DUMP_KEEP`) e backup applicativi (`BACKUP_KEEP` nel `.env`: con un backup
+   al giorno 8 coprono solo 8 giorni, quindi propone 30; il `.env` ha una copia di sicurezza e per applicarlo
+   serve `docker compose up -d`, che lo script offre di fare).
+5. **Deriva gli altri orari** (controllo dei backup alle 08:00, o 2 ore dopo se il backup è dopo le 06:00;
+   prova di ripristino il primo domenica alle 05:00, spostata alle 06:00 se troppo vicina al backup).
+6. Riepilogo, conferma, **salva in `ops.env`** (`CRON_BACKUP_AT`, `CRON_BACKUP_DAYS`, `CRON_CHECK_AT`,
+   `CRON_RESTORETEST_AT`, `DUMP_KEEP`) e, dopo conferma, installa il crontab (`soldi cron install`, che da quel
+   momento rispetta sempre queste scelte).
+
+Opzioni: `--yes` (accetta le proposte), `--at HH:MM`, `--days '*'|1,3,5|lun,mer,ven`, `--dry-run` (mostra solo
+ciò che troverebbe e farebbe), `--no-install`.
+
 `soldi cron install` aggiunge (idempotente, tra `# BEGIN soldi` e `# END soldi`) al crontab dell'utente:
 watch ogni 5 minuti, backup alle 02:30, controllo dei backup alle 08:00, prova di ripristino il primo
-domenica del mese alle 05:00. Ogni riga passa da `ops/cronrun.sh`: un solo esemplare alla volta (`flock`) e
+domenica del mese alle 05:00 (valori predefiniti, cambiabili con `soldi backup-plan` o con le variabili `CRON_*`
+in `ops.env`). Ogni riga passa da `ops/cronrun.sh`: un solo esemplare alla volta (`flock`) e
 log in `ops-state/<job>.log` con rotazione semplice (oltre 1 MB; si tengono 3 file). `soldi cron print` mostra
 le righe, `soldi cron remove` le toglie.
 

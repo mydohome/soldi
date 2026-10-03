@@ -22,6 +22,7 @@ Uso: soldi [--home <cartella>] <comando> [opzioni]
   status                 quadro d'insieme: container, versione, età dei backup, disco, diagnostica
   setup                  installazione guidata (genera il .env, avvia lo stack)
   diag [--json]          diagnostica del database e della configurazione (sola lettura)
+  backup-plan            sceglie giorni e orari dei backup (rileva gli altri job) e sistema il crontab
   backup                 backup completo (applicativo + dump + copia fuori macchina)
   restore                ripristino guidato di un backup (--latest | --source <nome> [--yes])
   restore-test           prova di ripristino su un database temporaneo (--from-offsite)
@@ -51,6 +52,7 @@ case "$cmd" in
   status)       run status.sh "$@" ;;
   setup)        run setup.sh "$@" ;;
   cron)         run cron.sh "$@" ;;
+  backup-plan|plan) run backup-plan.sh "$@" ;;
   backup)       run backup.sh "$@" ;;
   restore)      run restore.sh "$@" ;;
   restore-test) run restore-test.sh "$@" ;;
