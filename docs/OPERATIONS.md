@@ -4,11 +4,15 @@ Gli strumenti sono in `ops/`. Servono a una cosa: **non perdere i dati** e rende
 semplici e ripetibili backup, ripristino, aggiornamento e diagnosi. Si usano da
 terminale, tramite un unico comando `soldi`.
 
-> **Indice** — [Strumenti](#strumenti) · [Cosa viene salvato](#cosa-viene-salvato-e-dove) ·
-> [Backup giornaliero](#backup-giornaliero) · [Copia fuori macchina](#copia-fuori-macchina-cifrata-restic) ·
-> [Controllo dei backup](#controllo-dei-backup) · [Notifiche](#notifiche-telegram) ·
-> [Prova di ripristino](#prova-di-ripristino) · [Aggiornamento](#aggiornamento-con-rollback) ·
-> [Ripristino](#ripristino-guidato) · [Sorveglianza](#sorveglianza-e-avvisi-di-guasto) ·
+> **Indice** — [Strumenti](#strumenti) · [Prima attivazione](#prima-attivazione-in-produzione) ·
+> [Procedure periodiche](#procedure-periodiche) · [Obiettivi](#obiettivi-dichiarati) ·
+> [Cosa viene salvato](#cosa-viene-salvato-e-dove) · [Backup giornaliero](#backup-giornaliero) ·
+> [Copia fuori macchina](#copia-fuori-macchina-cifrata-restic) · [Controllo dei backup](#controllo-dei-backup) ·
+> [Notifiche](#notifiche-telegram) · [Prova di ripristino](#prova-di-ripristino) ·
+> [Aggiornamento](#aggiornamento-con-rollback) · [Ripristino guidato](#ripristino-guidato) ·
+> [Tre scenari di ripristino](#tre-scenari-di-ripristino) · [Sorveglianza](#sorveglianza-e-avvisi-di-guasto) ·
+> [Come leggere gli avvisi](#come-leggere-gli-avvisi) · [Diagnostica](#diagnostica) ·
+> [Installazione guidata](#installazione-guidata-e-pianificazione) · [Limiti noti](#limiti-noti) ·
 > [Segreti](#segreti-da-conservare-fuori-macchina)
 
 ## Strumenti
@@ -32,6 +36,11 @@ ln -s app/ops/soldi ./soldi
 
 | Comando | Che cosa fa |
 |---|---|
+| `soldi status` | quadro d'insieme: container, versione, età di backup/dump/copia fuori macchina/prova di ripristino, disco, diagnostica, avvisi |
+| `soldi setup` | installazione guidata (genera il `.env` con segreti casuali, avvia lo stack) |
+| `soldi diag [--json]` | diagnostica del database e della configurazione (sola lettura) |
+| `soldi cron print\|install\|remove` | pianificazione di watch, backup, controlli e prova di ripristino |
+| `soldi user [list\|create\|password\|telegram\|backup\|restore\|manage]` | gestione utenti (`npm run user:*` nel container web) |
 | `soldi backup` | backup completo: applicativo + dump PostgreSQL + copia fuori macchina |
 | `soldi check` | controlla che i backup esistano, siano recenti e integri |
 | `soldi offsite [--init]` | copia fuori macchina cifrata (restic) |
@@ -205,6 +214,178 @@ controlli consecutivi falliti** (~10 minuti, per non allarmarsi durante un aggio
 **promemoria ogni 6 ore**; quando rientra, un messaggio «**ripristinato**» con la durata del guasto. Ogni
 messaggio indica il controllo fallito e un suggerimento (es. `soldi logs web`). Con `HC_PING_URL_WATCH` ogni
 esecuzione completata fa un ping esterno.
+
+## Prima attivazione in produzione
+
+Nell'ordine, da `~/docker/soldi` (cartella di deploy; `app/` è il checkout git):
+
+1. **Aggiorna il codice e ricostruisci l'immagine** (serve per `npm run diag`):
+   ```bash
+   cd ~/docker/soldi && git -C app pull --ff-only && docker compose up -d --build
+   ln -s app/ops/soldi ./soldi && ./soldi help
+   ```
+2. **Controlla lo stato**: `./soldi status` (all'inizio vedrai avvisi: mancano ancora dump, copia fuori macchina e prova di ripristino).
+3. **Crea `ops.env`** (`cp app/ops.env.example ops.env && chmod 600 ops.env`) con il bot di allerta
+   (vedi [Notifiche](#notifiche-telegram)) e **verifica il canale**: `./soldi notify-test` e
+   `./soldi notify-test --simulate-fault` (devi ricevere 3 + 3 messaggi su Telegram).
+4. **Configura restic** in `ops.env` (`RESTIC_REPOSITORY`, `RESTIC_PASSWORD_FILE` + credenziali del
+   backend), crea il file della password (`openssl rand -base64 24 > ~/.restic-soldi-password && chmod 600 …`),
+   **conservala anche altrove**, poi `./soldi offsite --init`.
+5. **Primo backup completo**: `./soldi backup` → deve uscire con 0 e fare anche la copia fuori macchina.
+   Verifica la copia: `restic snapshots --tag soldi` (con `RESTIC_REPOSITORY`/`RESTIC_PASSWORD_FILE`
+   nell'ambiente) oppure `./soldi check`.
+6. **Prova di ripristino, prima in locale e poi dalla copia remota**: `./soldi restore-test` e
+   `./soldi restore-test --from-offsite`. Entrambe devono riuscire: solo allora la copia fuori macchina è
+   dimostrata.
+7. **Pianifica**: `./soldi cron install` (watch ogni 5 minuti, backup alle 02:30, controllo alle 08:00,
+   prova di ripristino il primo domenica del mese; con restic configurato usa `--from-offsite`).
+   Verifica con `crontab -l`.
+8. **Controllo finale**: `./soldi check` deve uscire con 0 e `./soldi status` non mostrare avvisi.
+   Dopo il primo giro notturno guarda `ops-state/backup.log` e `ops-state/*.json`.
+9. Facoltativo ma consigliato: un check esterno (healthchecks.io) con `HC_PING_URL_*` in `ops.env`, per
+   sapere anche se si ferma il cron o muore la macchina.
+
+## Procedure periodiche
+
+| Quando | Cosa | Come |
+|---|---|---|
+| ogni giorno (automatico) | backup completo + dump + copia fuori macchina | cron 02:30 → `ops-state/backup.json` |
+| ogni giorno (automatico) | controllo dei backup | cron 08:00 → avviso solo se c'è un problema |
+| ogni 5 minuti (automatico) | sorveglianza del servizio | cron → avviso dopo 2 controlli falliti |
+| ogni settimana | guarda `./soldi status` e leggi gli avvisi ricevuti | 1 minuto |
+| ogni mese (automatico) | prova di ripristino dalla copia remota | cron, primo domenica alle 05:00 |
+| ogni mese (a mano) | `./soldi diag` | controlla schema, dati e configurazione |
+| prima di ogni aggiornamento | niente: `./soldi update` fa già backup e rollback | |
+| una volta l'anno | prova a ripristinare **a mano** su una macchina di prova con `soldi dr --restic` | verifica anche i documenti e i segreti conservati fuori |
+
+## Obiettivi dichiarati
+
+* **Perdita massima di dati (RPO): 24 ore**, grazie al dump quotidiano (02:30) e alla copia fuori macchina
+  subito dopo. Il solo backup applicativo, da solo, sarebbe settimanale (fino a 7 giorni).
+* **Tempi di ripristino (RTO), stimati** per un database di dimensioni familiari (< 100 MB):
+  ripristino guidato sul sistema esistente **5–10 minuti**; ricostruzione su una macchina nuova
+  **30–60 minuti** (installazione di Docker e build dell'immagine comprese). La durata reale di un
+  ripristino la trovi in `ops-state/restore-test.json` (`durationMs`) dopo ogni prova.
+* **Verifica**: un backup non provato non conta. Il controllo (`soldi check`) segnala una prova di
+  ripristino più vecchia di 40 giorni.
+
+## Tre scenari di ripristino
+
+**1. Dati corrotti o errore umano** (la macchina funziona):
+
+```bash
+./soldi restore --latest                   # oppure: --source soldi-backup-2026-10-01_03-00-00-000
+```
+Mostra data e righe del backup, chiede di digitare `RIPRISTINA`, fa un dump di sicurezza, ripristina e
+verifica. Per tornare a uno stato di **qualche ora fa** (il backup applicativo è più vecchio) usa un dump:
+```bash
+docker compose stop web
+gzip -dc backups/dumps/soldi-AAAAMMGG-hhmmss.sql.gz | docker compose exec -T db psql -v ON_ERROR_STOP=1 -U "$PGUSER" -d "$PGDATABASE"
+docker compose up -d web && ./soldi diag
+```
+(`$PGUSER`/`$PGDATABASE` sono nel `.env`; il dump è fatto con `--clean --if-exists`.)
+
+**2. Macchina persa** (serve una macchina nuova con Docker, git e restic):
+
+```bash
+mkdir -p ~/docker/soldi && cd ~/docker/soldi
+git clone https://github.com/mydohome/soldi.git app
+# serve solo per leggere la copia remota: repository e file della password di restic
+cp app/ops.env.example ops.env && chmod 600 ops.env      # imposta RESTIC_REPOSITORY, RESTIC_PASSWORD_FILE e le credenziali
+./app/ops/dr.sh --home ~/docker/soldi --restic --dry-run  # mostra i passaggi senza eseguirli
+./app/ops/dr.sh --home ~/docker/soldi --restic            # chiede di digitare RIPRISTINA
+```
+Ripristina `.env` (con le chiavi originali), `docker-compose.yml` di produzione e backup, avvia il database,
+ripristina e avvia l'app. Poi: ricrea `ops.env`, `./soldi cron install`, `./soldi backup`, `./soldi restore-test`.
+Da una **cartella locale** (es. un disco con una copia di `backups/` e `.env`): `--source-dir <cartella>`
+al posto di `--restic`. Se non hai il `.env`: `--ask-secrets` chiede `JWT_SECRET` e `SECRETS_KEY` originali
+(con una chiave diversa le credenziali Telegram salvate diventano illeggibili).
+
+**3. Solo il database è perso** (volume `db-data` cancellato; macchina, `.env` e `backups/` ci sono):
+
+```bash
+docker compose up -d                  # il database è nuovo e vuoto; web crea lo schema all'avvio
+./soldi restore --latest              # ripristina i dati dall'ultimo backup applicativo
+./soldi diag
+```
+In alternativa un solo comando che rifà tutto: `./soldi dr --source-dir ~/docker/soldi` (usa `backups/`
+e `.env` già presenti).
+
+## Come leggere gli avvisi
+
+| Messaggio (inizio) | Chi lo manda | Che cosa significa / che cosa fare |
+|---|---|---|
+| «Backup NON riuscito: dump PostgreSQL FALLITO» | `backup` | il dump è stato scartato; guarda `ops-state/backup.log`, spesso il container `db` è fermo. Rilancia `soldi backup` |
+| «Backup locale ok, ma: copia fuori macchina FALLITA» | `backup` | i dati locali sono salvi, quelli remoti no: `soldi offsite` e leggi l'errore (rete, credenziali, spazio) |
+| «Controllo backup: … vecchio di N ore» | `check` | un job non gira più: `crontab -l`, `ops-state/backup.log` |
+| «Controllo backup: … prova di ripristino…» | `check` | `soldi restore-test` (e, se fallisce, **non fidarti** dei backup finché non è risolto) |
+| «container web NON sano / NON in esecuzione» | `watch` | `soldi logs web`; `docker compose up -d`; se è dopo un aggiornamento valuta `soldi update` di nuovo o il rollback |
+| «PostgreSQL non accetta connessioni» | `watch` | `soldi logs db`; spazio disco? |
+| «si è riavviato N volte» | `watch` | crash a ripetizione: `soldi logs web` |
+| «spazio libero N% sul disco …» | `watch` | `docker system df`, `ls -lh backups/dumps`; abbassa `DUMP_KEEP` |
+| «Ultimo esito di "…" FALLITO» | `watch` | un job è fallito e non è riuscito ad avvisare: leggi `ops-state/<job>.json` |
+| «Ripristinato: …» | `watch` | il problema è rientrato (con la durata) |
+| «Promemoria — il problema dura da …» | `watch` | ogni 6 ore finché non rientra |
+| «L'host è stato riavviato» | `watch` | informativo, con lo stato dei servizi |
+| «Soldi aggiornato a …» / «Aggiornamento FALLITO» | `update` | vedi [Aggiornamento](#aggiornamento-con-rollback) |
+| «(in ritardo)» davanti al messaggio | `notify` | Telegram era irraggiungibile: il messaggio è partito dalla coda |
+
+## Diagnostica
+
+`soldi diag` (`npm run diag` nel container web; `--json` per l'output strutturato, `--data-only` ignora
+configurazione e backup) fa controlli in **sola lettura** (transazione `READ ONLY`), con esito
+ok/avviso/errore e uscita 0 / 2 / 1; non stampa mai segreti né dati personali:
+
+* **schema**: tabelle, colonne, indici (`uq_tx_rule_month`…) e vincoli attesi; i vincoli `NOT VALID` senza righe
+  fuori regola sono segnalati come «convalidabili» (`ALTER TABLE … VALIDATE CONSTRAINT …`), con righe fuori
+  regola sono un avviso;
+* **dati**: voci annuali senza mese · categoria di tipo diverso da movimento/regola · **riferimenti tra utenti
+  diversi** (errore: violazione di isolamento) · spese fisse in ritardo / oltre la fine del piano / con più
+  movimenti del previsto · sequenze `IDENTITY` indietro rispetto a `MAX(id)` (errore: tipico dopo un
+  ripristino, il prossimo inserimento fallirebbe) · email duplicate ignorando le maiuscole · credenziali
+  Telegram decifrabili con la `SECRETS_KEY` corrente;
+* **configurazione**: `JWT_SECRET` assente/corto/di esempio, `SECRETS_KEY` assente o non valida, `PGPASSWORD`
+  predefinita, `ALLOW_REGISTRATION=true`, `COOKIE_SECURE=false` con `HTTPS_ENABLED=true`;
+* **backup**: età dell'ultimo backup applicativo;
+* **informazioni**: versione di PostgreSQL, dimensione del database, righe per tabella, SHA dell'app.
+
+Il database è quello delle variabili `PG*`: `restore-test` la usa sul database temporaneo. Poiché
+`scripts/diag.js` e lo script npm stanno nell'immagine, la prima volta serve la ricostruzione
+(`soldi update`); `soldi status` e `soldi restore` lo segnalano se manca.
+
+## Installazione guidata e pianificazione
+
+`soldi setup` (`ops/setup.sh`) guida una **nuova installazione**: controlla docker, compose v2, git, curl e
+openssl; chiede lo scenario tra quelli del README (1 in LAN/locale, 2 dietro proxy sullo stesso host con
+porta solo locale, 3 dietro proxy su rete Docker con `docker-compose.npm.yml`, 4 proxy su un altro host);
+genera il `.env` dal modello con `JWT_SECRET`, `SECRETS_KEY` (64 caratteri esadecimali, come richiede
+`src/crypto/secrets.js`) e `PGPASSWORD` casuali, `HTTPS_ENABLED`/`COOKIE_SECURE`/`TRUST_PROXY` secondo lo
+scenario, `ALLOW_REGISTRATION=false`, `TZ`, e per lo scenario 3 anche `PUID`/`PGID` e `COMPOSE_FILE`;
+permessi 600. **Non sovrascrive mai un `.env` esistente** senza copia di sicurezza e conferma (i segreti già
+presenti restano) e **rifiuta di rigenerare `PGPASSWORD` se il volume `db-data` esiste già**:
+`POSTGRES_PASSWORD` vale solo alla prima inizializzazione, cambiarla romperebbe l'accesso al database.
+Poi crea `proxy-net` se serve, avvia lo stack, attende lo stato sano e propone di creare il primo utente e,
+facoltativamente, `ops.env`.
+
+`soldi cron install` aggiunge (idempotente, tra `# BEGIN soldi` e `# END soldi`) al crontab dell'utente:
+watch ogni 5 minuti, backup alle 02:30, controllo dei backup alle 08:00, prova di ripristino il primo
+domenica del mese alle 05:00. Ogni riga passa da `ops/cronrun.sh`: un solo esemplare alla volta (`flock`) e
+log in `ops-state/<job>.log` con rotazione semplice (oltre 1 MB; si tengono 3 file). `soldi cron print` mostra
+le righe, `soldi cron remove` le toglie.
+
+## Limiti noti
+
+* Il rollback dell'aggiornamento ripristina il **codice**, non il database (vedi [sopra](#aggiornamento-con-rollback)).
+* Il pulsante «Aggiorna» dell'app non installa nuove dipendenze (il suo `npm ci` usa il `package.json`
+  dell'immagine): le versioni che cambiano `package.json` richiedono `soldi update`.
+* Il backup applicativo e il dump sono **per tutta l'installazione**: un utente non può ripristinare da
+  Impostazioni il backup globale (solo i propri backup personali).
+* `durationMs` dei file di stato ha risoluzione di un secondo.
+* `soldi watch` vede solo ciò che gira sulla macchina: se muore l'intera macchina o si ferma il cron serve il
+  ping esterno (`HC_PING_URL_WATCH`).
+* La copia fuori macchina non include `ops.env` (contiene le credenziali per leggere la copia stessa).
+* La diagnostica e la prova di ripristino con `diag` richiedono l'immagine ricostruita dopo l'introduzione.
+* Compatibilità: script bash testati con bash 3.2 (macOS) e 5.x (Linux); il lock usa `flock` se presente.
 
 ## Segreti da conservare fuori macchina
 

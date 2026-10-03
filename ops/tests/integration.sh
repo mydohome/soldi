@@ -94,6 +94,11 @@ sql "INSERT INTO transactions (user_id,type,amount_cents,scope,note,occurred_on)
 USERS_BEFORE="$(sql 'SELECT count(*) FROM users')"; TX_BEFORE="$(sql 'SELECT count(*) FROM transactions')"
 check "dati inseriti ($USERS_BEFORE utenti, $TX_BEFORE movimenti)" test "$TX_BEFORE" = 25
 
+say "diagnostica e status"
+rc=0; docker compose exec -T web npm run diag --silent -- --data-only >/dev/null || rc=$?
+check "npm run diag --data-only esce con 0 (ottenuto $rc)" test "$rc" -eq 0
+check "soldi status produce il quadro" bash -c "'$REPO/ops/status.sh' --home '$WORK' 2>&1 | grep -q 'Soldi — stato'" 
+
 say "backup.sh"
 rc=0; "$REPO/ops/backup.sh" --home "$WORK" || rc=$?
 check "backup.sh esce con 0 (ottenuto $rc)" test "$rc" -eq 0

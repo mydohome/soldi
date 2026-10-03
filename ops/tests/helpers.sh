@@ -115,6 +115,8 @@ case "$*" in
   "run --rm --no-deps -T web node src/db/migrate.js") exit "$(cat "$STUB_DIR/migrate_rc" 2>/dev/null || echo 0)" ;;
   "run --rm --no-deps -T web node src/backup/restore.js "*) exit "$(cat "$STUB_DIR/restore_rc" 2>/dev/null || echo 0)" ;;
   "exec -T web test -f scripts/diag.js") exit "$(cat "$STUB_DIR/diag_present" 2>/dev/null || echo 1)" ;;
+  "exec -T web npm run diag --silent -- --json") cat "$STUB_DIR/diag_json" 2>/dev/null || echo "{\"summary\":{\"ok\":20,\"warn\":0,\"error\":0}}" ;;
+  "exec -T web npm run diag --silent -- "*) exit "$(cat "$STUB_DIR/diag_rc" 2>/dev/null || echo 0)" ;;
   "exec -T web npm run diag --silent") exit "$(cat "$STUB_DIR/diag_rc" 2>/dev/null || echo 0)" ;;
   "up -d web")
     [ -f "$STUB_DIR/fail_up_web" ] && exit 1
