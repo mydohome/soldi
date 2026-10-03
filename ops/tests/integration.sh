@@ -111,6 +111,10 @@ check "nessun container di prova rimasto" test "$(leftovers)" = 0
 check "nessuna rete di prova rimasta" test "$(net_leftovers)" = 0
 check "il database di produzione non è cambiato" test "$(sql 'SELECT count(*) FROM transactions')" = "$TX_BEFORE"
 
+say "watch.sh sullo stack sano (prima di corrompere il backup)"
+rc=0; "$REPO/ops/watch.sh" --home "$WORK" || rc=$?
+check "watch.sh esce con 0 (ottenuto $rc)" test "$rc" -eq 0
+
 say "restore-test.sh con CSV corrotto (deve FALLIRE)"
 latest="$(find "$WORK/backups" -maxdepth 1 -type d -name 'soldi-backup-*' | sort | tail -n 1)"
 head -n 3 "$latest/transactions.csv" > "$latest/transactions.csv.tmp" && mv "$latest/transactions.csv.tmp" "$latest/transactions.csv"
@@ -122,9 +126,9 @@ check "nessuna rete di prova rimasta" test "$(net_leftovers)" = 0
 check "utenti di produzione intatti" test "$(sql 'SELECT count(*) FROM users')" = "$USERS_BEFORE"
 check "movimenti di produzione intatti" test "$(sql 'SELECT count(*) FROM transactions')" = "$TX_BEFORE"
 
-say "watch.sh sullo stack sano"
+say "watch.sh segnala la prova di ripristino fallita"
 rc=0; "$REPO/ops/watch.sh" --home "$WORK" || rc=$?
-check "watch.sh esce con 0 (ottenuto $rc)" test "$rc" -eq 0
+check "watch.sh esce con 1 (ottenuto $rc)" test "$rc" -eq 1
 
 if [ "$FAILED" -ne 0 ]; then echo; echo "INTEGRAZIONE: FALLITA"; exit 1; fi
 echo; echo "INTEGRAZIONE: OK"
