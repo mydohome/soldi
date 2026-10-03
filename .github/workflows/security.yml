@@ -1,0 +1,41 @@
+name: Sicurezza
+
+# Dipendenze di produzione e immagine Docker: a ogni PR e una volta a settimana (le vulnerabilità
+# nascono anche quando il codice non cambia).
+on:
+  pull_request:
+  push:
+    branches: [main]
+  schedule:
+    - cron: '17 5 * * 1'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  npm-audit:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 20
+          cache: npm
+      - run: npm ci --omit=dev
+      # fallisce su vulnerabilità alte o critiche delle dipendenze di produzione
+      - run: npm audit --omit=dev --audit-level=high
+
+  trivy-image:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Build dell'immagine
+        run: docker build -t soldi:scan .
+      - name: Scansione con Trivy (HIGH, CRITICAL; solo vulnerabilità con correzione disponibile)
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
+        with:
+          image-ref: soldi:scan
+          severity: HIGH,CRITICAL
+          ignore-unfixed: true
+          exit-code: '1'

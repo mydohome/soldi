@@ -19,6 +19,9 @@ usage() {
   cat <<'TXT'
 Uso: soldi [--home <cartella>] <comando> [opzioni]
 
+  status                 quadro d'insieme: container, versione, età dei backup, disco, diagnostica
+  setup                  installazione guidata (genera il .env, avvia lo stack)
+  diag [--json]          diagnostica del database e della configurazione (sola lettura)
   backup                 backup completo (applicativo + dump + copia fuori macchina)
   restore                ripristino guidato di un backup (--latest | --source <nome> [--yes])
   restore-test           prova di ripristino su un database temporaneo (--from-offsite)
@@ -29,6 +32,9 @@ Uso: soldi [--home <cartella>] <comando> [opzioni]
   watch                  controllo di salute (di norma da cron; a mano mostra ogni controllo)
   notify-test            prova delle notifiche (--simulate-fault)
   logs [-f] [web|db]     log dei container
+  user [list|create|password|telegram|backup|restore|manage] [...]
+                         gestione utenti (npm run user:* nel container web)
+  cron print|install|remove   pianificazione (watch, backup, controlli, prova di ripristino)
 
 Documentazione: docs/OPERATIONS.md
 TXT
@@ -42,6 +48,9 @@ run() { local script="$1"; shift; if [ "${#HOME_OPT[@]}" -gt 0 ]; then exec "$OP
 
 case "$cmd" in
   help|-h|--help) usage ;;
+  status)       run status.sh "$@" ;;
+  setup)        run setup.sh "$@" ;;
+  cron)         run cron.sh "$@" ;;
   backup)       run backup.sh "$@" ;;
   restore)      run restore.sh "$@" ;;
   restore-test) run restore-test.sh "$@" ;;
@@ -51,6 +60,21 @@ case "$cmd" in
   dr)           run dr.sh "$@" ;;
   watch)        run watch.sh "$@" ;;
   notify-test)  run notify-test.sh "$@" ;;
+  diag)
+    SOLDI_HOME_ARG=""; if [ "${#HOME_OPT[@]}" -gt 0 ]; then SOLDI_HOME_ARG="${HOME_OPT[1]}"; fi
+    detect_layout; choose_compose
+    $DC exec -T web test -f scripts/diag.js >/dev/null 2>&1 || die "La diagnostica non è nell'immagine in esecuzione: serve la ricostruzione (soldi update)."
+    # shellcheck disable=SC2086
+    exec $DC exec -T web npm run diag --silent -- "$@" ;;
+  user)
+    SOLDI_HOME_ARG=""; if [ "${#HOME_OPT[@]}" -gt 0 ]; then SOLDI_HOME_ARG="${HOME_OPT[1]}"; fi
+    detect_layout; choose_compose
+    sub="${1:-manage}"; [ $# -eq 0 ] || shift
+    case "$sub" in list|create|password|telegram|backup|restore) script="user:$sub" ;; manage) script="user:manage" ;; *) die "soldi user: sottocomando sconosciuto: $sub (list, create, password, telegram, backup, restore, manage)" ;; esac
+    # terminale solo se c'è (i comandi interattivi lo richiedono)
+    tty_flag=(-T); if [ -t 0 ] && [ -t 1 ]; then tty_flag=(); fi
+    # shellcheck disable=SC2086
+    if [ $# -gt 0 ]; then exec $DC exec ${tty_flag[@]+"${tty_flag[@]}"} web npm run "$script" -- "$@"; else exec $DC exec ${tty_flag[@]+"${tty_flag[@]}"} web npm run "$script"; fi ;;
   logs)
     SOLDI_HOME_ARG=""; if [ "${#HOME_OPT[@]}" -gt 0 ]; then SOLDI_HOME_ARG="${HOME_OPT[1]}"; fi
     detect_layout; choose_compose

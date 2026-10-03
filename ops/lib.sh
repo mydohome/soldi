@@ -499,6 +499,11 @@ run_diag() {
   $DC exec -T web test -f scripts/diag.js >/dev/null 2>&1 || return 3
   $DC exec -T web npm run diag --silent >&2
 }
+# Diagnostica in JSON (stdout): stesso criterio di run_diag; 3 = non disponibile.
+run_diag_json() {
+  $DC exec -T web test -f scripts/diag.js >/dev/null 2>&1 || return 3
+  $DC exec -T web npm run diag --silent -- --json
+}
 # Conferma digitata: confirm_typed <parola> <messaggio>; legge da stdin.
 confirm_typed() {
   local word="$1" answer=""
