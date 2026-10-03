@@ -63,7 +63,7 @@ test_setup_non_sovrascrive_un_env_esistente_senza_conferma() {
   assert_contains "$(cat "$SB/out")" "Annullato"
   assert_eq "$(cat "$HOME_DIR/.env")" "$before" ".env intatto"
   # con conferma: copia di sicurezza e segreti mantenuti
-  out_rc="$(printf 's\n' | SETUP_STDIN=1 "$OPS_REAL/setup.sh" --home "$HOME_DIR" --scenario 1 --tz Europe/Rome --skip-user --no-start >"$SB/out" 2>&1; echo $?)"
+  out_rc="$(printf 's\n' | SETUP_STDIN=1 "$OPS_REAL/setup.sh" --home "$HOME_DIR" --scenario 1 --tz Europe/Rome --skip-user --no-start --no-plan >"$SB/out" 2>&1; echo $?)"
   assert_eq "$out_rc" 0
   n=0; for f in "$HOME_DIR"/.env.bak-*; do [ -f "$f" ] && n=$((n + 1)); done; assert_eq "$n" 1 "copia di sicurezza"
   assert_eq "$(fmode "$(ls "$HOME_DIR"/.env.bak-* | head -n 1)")" 600
@@ -87,13 +87,13 @@ esac'
   assert_no_file "$HOME_DIR/.env"
   # con un .env esistente: PGPASSWORD mantenuta anche se è quella predefinita
   printf 'JWT_SECRET=x\nPGPASSWORD=soldi\n' > "$HOME_DIR/.env"
-  out_rc="$(printf 's\n' | SETUP_STDIN=1 "$OPS_REAL/setup.sh" --home "$HOME_DIR" --scenario 1 --tz Europe/Rome --skip-user --no-start >"$SB/out" 2>&1; echo $?)"
+  out_rc="$(printf 's\n' | SETUP_STDIN=1 "$OPS_REAL/setup.sh" --home "$HOME_DIR" --scenario 1 --tz Europe/Rome --skip-user --no-start --no-plan >"$SB/out" 2>&1; echo $?)"
   assert_eq "$out_rc" 0
   assert_eq "$(envv PGPASSWORD)" soldi "il volume è inizializzato con quella password"
   assert_contains "$(cat "$SB/out")" "PGPASSWORD mantenuta"
   # interattivo: la password originale si inserisce a mano
   rm "$HOME_DIR/.env"
-  out_rc="$(printf 'passwordoriginale\n' | SETUP_STDIN=1 "$OPS_REAL/setup.sh" --home "$HOME_DIR" --scenario 1 --tz Europe/Rome --skip-user --no-start >"$SB/out" 2>&1; echo $?)"
+  out_rc="$(printf 'passwordoriginale\n' | SETUP_STDIN=1 "$OPS_REAL/setup.sh" --home "$HOME_DIR" --scenario 1 --tz Europe/Rome --skip-user --no-start --no-plan >"$SB/out" 2>&1; echo $?)"
   assert_eq "$out_rc" 0; assert_eq "$(envv PGPASSWORD)" passwordoriginale
 }
 test_setup_no_start_e_ops_env() {
@@ -101,13 +101,35 @@ test_setup_no_start_e_ops_env() {
   assert_eq "$(setup --scenario 1 --yes --no-start)" 0
   assert_not_contains "$(dc_log)" "up -d"
   rm -f "$HOME_DIR/.env"
-  out_rc="$(printf 'tok:EN\n42\nsftp:u@h:/x\n' | SETUP_STDIN=1 HOME="$SB" "$OPS_REAL/setup.sh" --home "$HOME_DIR" --scenario 1 --tz Europe/Rome --skip-user --no-start --ops-env >"$SB/out" 2>&1; echo $?)"
+  out_rc="$(printf 'tok:EN\n42\nsftp:u@h:/x\n' | SETUP_STDIN=1 HOME="$SB" "$OPS_REAL/setup.sh" --home "$HOME_DIR" --scenario 1 --tz Europe/Rome --skip-user --no-start --ops-env --no-plan >"$SB/out" 2>&1; echo $?)"
   assert_eq "$out_rc" 0
   assert_eq "$(fmode "$HOME_DIR/ops.env")" 600
   assert_eq "$( ( . "$OPS_REAL/lib.sh" >/dev/null 2>&1; read_kv "$HOME_DIR/ops.env" ALERT_TG_CHAT ) )" 42
   assert_eq "$( ( . "$OPS_REAL/lib.sh" >/dev/null 2>&1; read_kv "$HOME_DIR/ops.env" RESTIC_REPOSITORY ) )" "sftp:u@h:/x"
   assert_eq "$(fmode "$SB/.restic-soldi-password")" 600 "password di restic generata, 600"
   assert_contains "$(cat "$SB/out")" "CONSERVALA anche altrove"
+}
+
+test_setup_pianifica_i_backup_su_richiesta() {
+  setup_proj
+  CRONFILE="$SB/crontab.txt"; printf '30 2 * * * cd /srv/studio && ./backup.sh\n' > "$CRONFILE"
+  make_stub "$SB/bin/crontab" 'f="'"$CRONFILE"'"; if [ "${1:-}" = -l ]; then cat "$f"; else cat > "$f"; fi'
+  export CRONTAB="$SB/bin/crontab" OPS_SYSTEM_CRON_FILES="$SB/nessuno"
+  assert_eq "$(setup --scenario 1 --tz Europe/Rome --yes --no-start --plan-backups)" 0
+  assert_contains "$(cat "$SB/out")" "pianificazione dei backup"
+  assert_contains "$(cat "$CRONFILE")" "# BEGIN soldi" "il crontab è stato sistemato dalla pianificazione"
+  assert_contains "$(cat "$CRONFILE")" "cd /srv/studio" "il job esistente resta"
+  assert_eq "$( ( . "$OPS_REAL/lib.sh" >/dev/null 2>&1; read_kv "$HOME_DIR/ops.env" CRON_BACKUP_AT ) )" 04:30 "evita il job delle 02:30 e il backup interno della domenica alle 03:00"
+  assert_contains "$(cat "$SB/out")" "backup-plan"
+}
+test_setup_senza_flag_non_pianifica_in_modo_non_interattivo() {
+  setup_proj
+  CRONFILE="$SB/crontab.txt"; : > "$CRONFILE"
+  make_stub "$SB/bin/crontab" 'f="'"$CRONFILE"'"; if [ "${1:-}" = -l ]; then cat "$f"; else cat > "$f"; fi'
+  export CRONTAB="$SB/bin/crontab"
+  assert_eq "$(setup --scenario 1 --yes --no-start)" 0
+  assert_not_contains "$(cat "$CRONFILE")" "soldi"
+  assert_eq "$(setup --scenario 1 --yes --no-start --no-plan)" 1 "esiste già un .env: con --yes risponde no"
 }
 
 # ------------------------------------------------------------------ cron
