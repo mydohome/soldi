@@ -1,0 +1,21 @@
+# Aggiornamenti settimanali: dipendenze npm, immagini Docker (Dockerfile e compose) e GitHub Actions
+# (le action sono fissate per hash di commit: Dependabot propone i nuovi hash).
+version: 2
+updates:
+  - package-ecosystem: npm
+    directory: /
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 5
+  - package-ecosystem: docker
+    directory: /
+    schedule:
+      interval: weekly
+  - package-ecosystem: docker-compose
+    directory: /
+    schedule:
+      interval: weekly
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
