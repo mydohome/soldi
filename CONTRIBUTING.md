@@ -24,6 +24,18 @@ Non hai un PostgreSQL locale? Usa Docker: `docker compose up -d db`.
   lato client, query SQL sempre parametrizzate.
 - Un commit = un cambiamento coerente. Messaggi in italiano o inglese, va bene entrambi.
 
+## Script di gestione (`ops/`)
+
+Script bash compatibili con bash 3.2 e 5.x, controllati con `shellcheck -S warning`. I test non
+usano Docker: sostituiscono `docker`, `docker compose` (variabili `DOCKER` e `DC`), `restic` e `curl`
+con stub.
+
+```bash
+shellcheck -S warning -x ops/*.sh ops/soldi ops/tests/*.sh scripts/update.sh
+bash ops/tests/run.sh          # test degli script (stub)
+bash ops/tests/integration.sh  # con Docker reale (lo esegue la CI)
+```
+
 ## Struttura
 
 Vedi la sezione **Architettura** del [README](README.md).

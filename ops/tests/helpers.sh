@@ -108,15 +108,56 @@ case "$*" in
       corrupt) echo "SELECT 1;"; echo "-- dump interrotto" ;;
       fail)    echo "SELECT 1;"; exit 1 ;;
     esac ;;
+  "up -d --build") echo "up -d --build GIT_SHA=$GIT_SHA" >> "$STUB_DIR/dc.log" ;;
+  "run --rm --no-deps -T web node src/db/migrate.js") exit "$(cat "$STUB_DIR/migrate_rc" 2>/dev/null || echo 0)" ;;
+  "run --rm --no-deps -T web node src/backup/restore.js "*) exit "$(cat "$STUB_DIR/restore_rc" 2>/dev/null || echo 0)" ;;
+  "exec -T web test -f scripts/diag.js") exit "$(cat "$STUB_DIR/diag_present" 2>/dev/null || echo 1)" ;;
+  "exec -T web npm run diag --silent") exit "$(cat "$STUB_DIR/diag_rc" 2>/dev/null || echo 0)" ;;
+  "up -d web")
+    [ -f "$STUB_DIR/fail_up_web" ] && exit 1
+    exit 0 ;;
   "exec -T web node -e "*) exit "$(cat "$STUB_DIR/probe_rc" 2>/dev/null || echo 0)" ;;
   "exec -T db pg_isready "*) exit "$(cat "$STUB_DIR/pgready_rc" 2>/dev/null || echo 0)" ;;
   *) exit 0 ;;
 esac'
-  # docker
+  # docker (le risposte si regolano con file in $STUB_DIR)
   make_stub "$SB/bin/docker" '
 echo "$*" >> "$STUB_DIR/docker.log"
+created() { grep -o -e "--name [^ ]*" "$STUB_DIR/docker.log" | awk "{print \$2}" | tr "\n" " "; }
 case "$1" in
-  inspect) cat "$STUB_DIR/inspect.out" 2>/dev/null || echo healthy ;;
+  inspect)
+    case "$*" in
+      *"{{.Image}}"*) cat "$STUB_DIR/image" 2>/dev/null || echo sha256:testimage; exit 0 ;;
+      *"{{.Name}}"*)  case "$*" in *cid-db*) echo /soldi-db ;; *) echo /soldi-web ;; esac; exit 0 ;;
+      *".NetworkSettings.Networks"*) cat "$STUB_DIR/prod_networks" 2>/dev/null || echo "proxy-net backend "; exit 0 ;;
+      *".RestartCount"*) case "$*" in *cid-db*) svc=db ;; *) svc=web ;; esac; cat "$STUB_DIR/restart_count.$svc" 2>/dev/null || echo 0; exit 0 ;;
+    esac
+    # stato di salute: sano, salvo che HEAD di $STUB_APP sia il commit "cattivo" indicato in bad_sha
+    if [ -f "$STUB_DIR/bad_sha" ] && [ -n "${STUB_APP:-}" ] && [ "$(git -C "$STUB_APP" rev-parse HEAD)" = "$(cat "$STUB_DIR/bad_sha")" ]; then echo unhealthy; exit 0; fi
+    case "$*" in *cid-db*) svc=db ;; *) svc=web ;; esac
+    cat "$STUB_DIR/inspect.out.$svc" 2>/dev/null || cat "$STUB_DIR/inspect.out" 2>/dev/null || echo healthy ;;
+  network)
+    case "$2" in
+      inspect)
+        case "$*" in
+          *"inspect proxy-net"*) exit "$(cat "$STUB_DIR/proxy_net_rc" 2>/dev/null || echo 1)" ;;
+          *"{{.Internal}}"*) cat "$STUB_DIR/net_internal" 2>/dev/null || echo true ;;
+          *) cat "$STUB_DIR/net_members" 2>/dev/null || created ;;
+        esac ;;
+      *) exit "$(cat "$STUB_DIR/network_rc" 2>/dev/null || echo 0)" ;;
+    esac ;;
+  run)
+    case "$*" in
+      *"node src/db/migrate.js"*) exit "$(cat "$STUB_DIR/migrate_rc" 2>/dev/null || echo 0)" ;;
+      *"node src/backup/restore.js"*) exit "$(cat "$STUB_DIR/restore_rc" 2>/dev/null || echo 0)" ;;
+      *"node scripts/diag.js"*) exit "$(cat "$STUB_DIR/diag_rc" 2>/dev/null || echo 0)" ;;
+    esac ;;
+  exec)
+    case "$*" in
+      *pg_isready*) exit "$(cat "$STUB_DIR/pgready_rc" 2>/dev/null || echo 0)" ;;
+      *psql*) t="$(printf "%s" "$*" | sed -n "s/.*FROM \([a-z_]*\).*/\1/p")"; cat "$STUB_DIR/count.$t" 2>/dev/null || echo 0 ;;
+    esac ;;
+  info) echo "${STUB_DOCKER_ROOT:-/var/lib/docker}" ;;
   *) exit 0 ;;
 esac'
   # restic: registra argomenti e le variabili rilevanti; esiti regolabili con restic.rc.<comando>

@@ -1,0 +1,62 @@
+#!/usr/bin/env bash
+# soldi — punto di ingresso unico per gli strumenti di gestione (ops/).
+# Si può richiamare anche con un link simbolico nella cartella di deploy:
+#   ln -s app/ops/soldi ./soldi      (poi:  ./soldi help)
+# Opzione globale: --home <cartella> (o SOLDI_HOME) se non sei nella cartella di Soldi.
+set -euo pipefail
+umask 077
+
+SELF="${BASH_SOURCE[0]}"
+while [ -L "$SELF" ]; do _d="$(cd "$(dirname "$SELF")" && pwd)"; SELF="$(readlink "$SELF")"; case "$SELF" in /*) ;; *) SELF="$_d/$SELF" ;; esac; done
+OPS_DIR="$(cd "$(dirname "$SELF")" && pwd)"
+# shellcheck source=ops/lib.sh
+. "$OPS_DIR/lib.sh"
+# Invocato tramite un link nella cartella di deploy: quella è la cartella di Soldi, anche
+# se si lavora da un'altra directory (gli script figli ricevono SOLDI_HOME).
+if [ -z "${SOLDI_HOME:-}" ] && [ -n "$OPS_INVOKED_DIR" ] && layout_ok "$OPS_INVOKED_DIR"; then export SOLDI_HOME="$OPS_INVOKED_DIR"; fi
+
+usage() {
+  cat <<'TXT'
+Uso: soldi [--home <cartella>] <comando> [opzioni]
+
+  backup                 backup completo (applicativo + dump + copia fuori macchina)
+  restore                ripristino guidato di un backup (--latest | --source <nome> [--yes])
+  restore-test           prova di ripristino su un database temporaneo (--from-offsite)
+  offsite                copia fuori macchina cifrata con restic (--init per creare il repository)
+  check                  controllo dei backup (esce 0 ok, 2 avviso, 1 errore)
+  update                 aggiornamento con backup e rollback (--force)
+  dr                     ripristino di emergenza su una macchina nuova
+  watch                  controllo di salute (di norma da cron; a mano mostra ogni controllo)
+  notify-test            prova delle notifiche (--simulate-fault)
+  logs [-f] [web|db]     log dei container
+
+Documentazione: docs/OPERATIONS.md
+TXT
+}
+
+HOME_OPT=()
+if [ "${1:-}" = --home ]; then HOME_OPT=(--home "${2:?--home richiede una cartella}"); shift 2; fi
+cmd="${1:-help}"; [ $# -eq 0 ] || shift
+
+run() { local script="$1"; shift; if [ "${#HOME_OPT[@]}" -gt 0 ]; then exec "$OPS_DIR/$script" "${HOME_OPT[@]}" "$@"; else exec "$OPS_DIR/$script" "$@"; fi; }
+
+case "$cmd" in
+  help|-h|--help) usage ;;
+  backup)       run backup.sh "$@" ;;
+  restore)      run restore.sh "$@" ;;
+  restore-test) run restore-test.sh "$@" ;;
+  offsite)      run offsite.sh "$@" ;;
+  check)        run backup-check.sh "$@" ;;
+  update)       run update.sh "$@" ;;
+  dr)           run dr.sh "$@" ;;
+  watch)        run watch.sh "$@" ;;
+  notify-test)  run notify-test.sh "$@" ;;
+  logs)
+    SOLDI_HOME_ARG=""; if [ "${#HOME_OPT[@]}" -gt 0 ]; then SOLDI_HOME_ARG="${HOME_OPT[1]}"; fi
+    detect_layout; choose_compose
+    follow=(); svc=()
+    for a in "$@"; do case "$a" in -f) follow=(-f) ;; web|db) svc=("$a") ;; *) die "logs: argomento sconosciuto: $a" ;; esac; done
+    # shellcheck disable=SC2086
+    exec $DC logs --tail=200 ${follow[@]+"${follow[@]}"} ${svc[@]+"${svc[@]}"} ;;
+  *) printf 'soldi: comando sconosciuto: %s\n\n' "$cmd" >&2; usage >&2; exit 1 ;;
+esac

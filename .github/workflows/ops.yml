@@ -1,0 +1,46 @@
+name: Strumenti di gestione (ops)
+
+# shellcheck e test degli script (con stub) a ogni modifica di ops/; test di integrazione con
+# Docker reale solo quando cambiano gli script, il backup/ripristino applicativo, l'immagine
+# o lo schema.
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'ops/**'
+      - 'scripts/update.sh'
+      - 'src/backup/**'
+      - 'src/db/**'
+      - 'Dockerfile'
+      - 'package.json'
+      - 'package-lock.json'
+      - '.github/workflows/ops.yml'
+  pull_request:
+    paths:
+      - 'ops/**'
+      - 'scripts/update.sh'
+      - 'src/backup/**'
+      - 'src/db/**'
+      - 'Dockerfile'
+      - 'package.json'
+      - 'package-lock.json'
+      - '.github/workflows/ops.yml'
+
+jobs:
+  ops-tests:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: shellcheck
+        run: shellcheck -S warning -x ops/*.sh ops/soldi ops/tests/*.sh scripts/update.sh
+      - name: Test degli script (stub, senza Docker reale)
+        run: bash ops/tests/run.sh
+
+  ops-integration:
+    runs-on: ubuntu-latest
+    needs: ops-tests
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - name: Backup e prova di ripristino su uno stack reale
+        run: bash ops/tests/integration.sh

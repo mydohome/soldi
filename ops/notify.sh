@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# notify.sh "<messaggio>" [--level info|warn|error] [--key <chiave>] [--once-per <ore>] [--job <nome>]
+# notify.sh "<messaggio>" [--level info|warn|error] [--key <chiave>] [--once-per <ore>] [--job <nome>] [--verbose]
 #
 # Invia un avviso Telegram con il bot di GESTIONE (ALERT_TG_TOKEN / ALERT_TG_CHAT in
 # ops.env), distinto da quello che l'app usa per i backup degli utenti.
@@ -20,7 +20,7 @@ OPS_DIR="$(cd "$(dirname "$SELF")" && pwd)"
 OUTBOX_MAX=50
 OUTBOX_TTL=$((48 * 3600))
 
-MSG=""; LEVEL=info; KEY=""; ONCE=""; JOB="${JOB_NAME:-ops}"; SOLDI_HOME_ARG=""
+MSG=""; LEVEL=info; KEY=""; ONCE=""; JOB="${JOB_NAME:-ops}"; SOLDI_HOME_ARG=""; VERBOSE=0
 while [ $# -gt 0 ]; do
   case "$1" in
     --level)    LEVEL="${2:-}"; shift 2 ;;
@@ -28,6 +28,7 @@ while [ $# -gt 0 ]; do
     --once-per) ONCE="${2:-}"; shift 2 ;;
     --job)      JOB="${2:-}"; shift 2 ;;
     --home)     SOLDI_HOME_ARG="${2:-}"; shift 2 ;;
+    --verbose)  VERBOSE=1; shift ;;
     -h|--help)  sed -n '2,12p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
     *)          if [ -z "$MSG" ]; then MSG="$1"; shift; else echo "notify.sh: argomento sconosciuto: $1" >&2; exit 0; fi ;;
   esac
@@ -57,7 +58,10 @@ if [ -n "$KEY" ] && [ -n "$ONCE" ]; then
   if [ -f "$STAMP" ]; then
     last="$(cat "$STAMP" 2>/dev/null || echo 0)"
     case "$last" in ''|*[!0-9]*) last=0 ;; esac
-    if [ $((NOW - last)) -lt $((ONCE * 3600)) ]; then exit 0; fi
+    if [ $((NOW - last)) -lt $((ONCE * 3600)) ]; then
+      [ "$VERBOSE" = 0 ] || echo "notify.sh: saltato (già inviato meno di $ONCE ore fa per la chiave $KEY)." >&2
+      exit 0
+    fi
   fi
 fi
 
@@ -114,6 +118,8 @@ fi
 if [ "$sent" -ne 0 ]; then
   enqueue "$TEXT"
   echo "notify.sh: Telegram non raggiungibile, messaggio in coda (ops-state/outbox)." >&2
+elif [ "$VERBOSE" = 1 ]; then
+  echo "notify.sh: messaggio inviato." >&2
 fi
 [ -n "${STAMP:-}" ] && printf '%s' "$NOW" > "$STAMP"
 exit 0

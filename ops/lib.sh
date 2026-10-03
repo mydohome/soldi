@@ -143,13 +143,20 @@ detect_layout() {
   fi
   [ -n "$COMPOSE_DIR" ] || die "Non trovo la cartella di Soldi (quella con docker-compose.yml e .env). Usa --home <cartella> o SOLDI_HOME."
 
+  apply_layout
+}
+# Deriva le cartelle dal COMPOSE_DIR già scelto (usata anche da dr.sh, che può partire
+# da una cartella ancora senza .env).
+apply_layout() {
   if [ -d "$COMPOSE_DIR/app/.git" ]; then LAYOUT=deploy; APP_DIR="$COMPOSE_DIR/app"; else LAYOUT=repo; APP_DIR="$COMPOSE_DIR"; fi
   BACKUPS_DIR="$COMPOSE_DIR/backups"
   DUMPS_DIR="$BACKUPS_DIR/dumps"
   STATE_DIR="$COMPOSE_DIR/ops-state"
   OPS_ENV_FILE="${OPS_ENV:-$COMPOSE_DIR/ops.env}"
-  mkdir -p "$STATE_DIR"
-  chmod 700 "$STATE_DIR" 2>/dev/null || true
+  if [ -z "${OPS_DRY_RUN:-}" ]; then
+    mkdir -p "$STATE_DIR"
+    chmod 700 "$STATE_DIR" 2>/dev/null || true
+  fi
   # Gli script lanciati da qui (notify.sh, offsite.sh…) ritrovano la stessa cartella.
   export SOLDI_HOME="$COMPOSE_DIR"
   cd "$COMPOSE_DIR"
@@ -215,25 +222,24 @@ state_field() {
 
 # ------------------------------------------------------------------ lock
 # flock se disponibile; altrimenti una directory atomica con il pid (stesso effetto).
-lock_acquire() {
+# lock_try <nome>: come lock_acquire ma restituisce 1 invece di terminare (cron frequenti).
+lock_try() {
   local name="$1" f="$COMPOSE_DIR/.$1.lock" pid
   if command -v flock >/dev/null 2>&1; then
     exec 9>"$f"
-    flock -n 9 || die "Un altro processo \"$name\" è già in corso."
-    return 0
+    flock -n 9
+    return $?
   fi
   LOCK_DIR="$f.d"
   if ! mkdir "$LOCK_DIR" 2>/dev/null; then
     pid="$(cat "$LOCK_DIR/pid" 2>/dev/null || true)"
-    if [ -n "$pid" ] && kill -0 "$pid" 2>/dev/null; then
-      LOCK_DIR=""
-      die "Un altro processo \"$name\" è già in corso."
-    fi
+    if [ -n "$pid" ] && kill -0 "$pid" 2>/dev/null; then LOCK_DIR=""; return 1; fi
     rm -rf "$LOCK_DIR"
-    mkdir "$LOCK_DIR" 2>/dev/null || { LOCK_DIR=""; die "Un altro processo \"$name\" è già in corso."; }
+    mkdir "$LOCK_DIR" 2>/dev/null || { LOCK_DIR=""; return 1; }
   fi
   echo "$$" > "$LOCK_DIR/pid"
 }
+lock_acquire() { lock_try "$1" || die "Un altro processo \"$1\" è già in corso."; }
 lock_release() {
   if [ -n "${LOCK_DIR:-}" ]; then rm -rf "$LOCK_DIR"; LOCK_DIR=""; fi
 }
@@ -413,4 +419,175 @@ latest_app_backup() { # [cartella-backups]
 # Ultimo file che corrisponde al glob (per data di modifica); vuoto se non c'è.
 latest_file() { # <cartella> <glob>
   ls -1t "$1"/$2 2>/dev/null | head -n 1 || true
+}
+
+# ------------------------------------------------------------------ restic
+# restic_configured: 0 se ops.env ha repository e file password e il comando esiste.
+restic_configured() {
+  RESTIC="${RESTIC:-restic}"
+  [ -n "$(opsval RESTIC_REPOSITORY)" ] && [ -n "$(opsval RESTIC_PASSWORD_FILE)" ] && command -v "$RESTIC" >/dev/null 2>&1
+}
+# Esporta le variabili di restic (repository, file password, credenziali del backend).
+restic_export_env() {
+  export_ops_prefix RESTIC_ AWS_ B2_ AZURE_ GOOGLE_ OS_ ST_
+  RESTIC_REPOSITORY="$(opsval RESTIC_REPOSITORY)"; export RESTIC_REPOSITORY
+  RESTIC_PASSWORD_FILE="$(opsval RESTIC_PASSWORD_FILE)"; export RESTIC_PASSWORD_FILE
+}
+# Cartella (assoluta) che contiene l'ultimo backup applicativo dentro un albero
+# ripristinato da restic; vuota se non c'è.
+find_backups_root() { # <cartella>
+  local d
+  d="$(find "$1" -type d -name 'soldi-backup-*' 2>/dev/null | head -n 1)" || true
+  [ -n "$d" ] && dirname "$d" || true
+}
+
+# ------------------------------------------------------------------ barriere del ripristino di prova
+# Nomi dei container di PRODUZIONE (web, db e i nomi noti), separati da spazi.
+prod_container_names() {
+  local svc cid name names="soldi-web soldi-db"
+  for svc in web db; do
+    cid="$($DC ps -q "$svc" 2>/dev/null || true)"
+    [ -n "$cid" ] || continue
+    name="$("$DOCKER" inspect -f '{{.Name}}' "$cid" 2>/dev/null | sed 's#^/##' || true)"
+    [ -n "$name" ] && names="$names $name"
+  done
+  echo "$names"
+}
+# assert_sandbox <db-temporaneo> <rete> <random> <PGHOST>
+# Da chiamare PRIMA di ogni operazione distruttiva: abortisce se il database in uso
+# non è il container temporaneo, se coincide con uno di produzione, se la rete non è
+# isolata o se in rete c'è un container estraneo o uno di produzione.
+# Richiede PROD_NAMES (prod_container_names).
+assert_sandbox() {
+  local db="$1" net="$2" rand="$3" pghost="$4" prod members m nets
+  case "$db" in "soldi-restoretest-$rand") ;; *) die "BARRIERA: il database di prova non ha il nome atteso ($db): rifiuto di proseguire." ;; esac
+  [ "$pghost" = "$db" ] || die "BARRIERA: PGHOST ($pghost) non è il container temporaneo ($db): rifiuto di proseguire."
+  for prod in ${PROD_NAMES:-soldi-web soldi-db}; do
+    { [ "$prod" != "$db" ] && [ "$prod" != "$pghost" ]; } || die "BARRIERA: il database di prova coincide con un container di produzione ($prod)."
+  done
+  [ "$("$DOCKER" network inspect -f '{{.Internal}}' "$net" 2>/dev/null || true)" = true ] \
+    || die "BARRIERA: la rete di prova $net non è isolata (--internal): rifiuto di proseguire."
+  members="$("$DOCKER" network inspect -f '{{range .Containers}}{{.Name}} {{end}}' "$net" 2>/dev/null || true)"
+  for m in $members; do
+    case "$m" in
+      "$db"|"soldi-restoretest-run-$rand"*) ;;
+      *) die "BARRIERA: sulla rete di prova c'è un container estraneo ($m): rifiuto di proseguire." ;;
+    esac
+  done
+  for prod in ${PROD_NAMES:-soldi-web soldi-db}; do
+    nets="$("$DOCKER" inspect -f '{{range $k, $v := .NetworkSettings.Networks}}{{$k}} {{end}}' "$prod" 2>/dev/null || true)"
+    case " $nets " in *" $net "*) die "BARRIERA: il container di produzione $prod è collegato alla rete di prova." ;; esac
+  done
+}
+
+# ------------------------------------------------------------------ ripristino applicativo
+# restore_in_container <nome-backup> [--migrate]
+# Esegue restore.js in un container usa-e-getta della STESSA immagine e delle stesse reti
+# del servizio web (docker compose run --no-deps). <nome-backup> è una cartella dentro
+# backups/ (visibile nel container come /app/backups). Con --migrate crea prima lo schema
+# (database nuovo).
+restore_in_container() {
+  local name="$1" migrate="${2:-}"
+  if [ "$migrate" = --migrate ]; then
+    $DC run --rm --no-deps -T web node src/db/migrate.js >&2 || return 1
+  fi
+  $DC run --rm --no-deps -T web node src/backup/restore.js "/app/backups/$name" --yes >&2
+}
+# diagnostica nel container web, se l'immagine la contiene (scripts/diag.js: richiede una
+# ricostruzione dopo l'introduzione). 0 ok, 1 errori, 2 avvisi, 3 non disponibile.
+run_diag() {
+  $DC exec -T web test -f scripts/diag.js >/dev/null 2>&1 || return 3
+  $DC exec -T web npm run diag --silent >&2
+}
+# Conferma digitata: confirm_typed <parola> <messaggio>; legge da stdin.
+confirm_typed() {
+  local word="$1" answer=""
+  printf '%s\n  Per confermare scrivi %s: ' "$2" "$word" >&2
+  IFS= read -r answer || answer=""
+  [ "$answer" = "$word" ]
+}
+
+# set_kv <file> <CHIAVE> <valore>: imposta CHIAVE=valore in un file .env (sostituisce la riga
+# esistente o aggiunge in coda); il valore passa per l'ambiente di awk, senza escape.
+set_kv() {
+  local tmp="$1.tmp.$$"
+  V="$3" awk -v key="$2" '
+    BEGIN { v = ENVIRON["V"]; done = 0 }
+    {
+      line = $0; k = line; sub(/^[[:space:]]*/, "", k); i = index(k, "=")
+      name = (i > 0) ? substr(k, 1, i - 1) : ""
+      gsub(/[[:space:]]+$/, "", name)
+      if (name == key && !done) { print key "=" v; done = 1; next }
+      print
+    }
+    END { if (!done) print key "=" v }
+  ' "$1" > "$tmp"
+  mv -f "$tmp" "$1"
+}
+
+# ------------------------------------------------------------------ macchina a stati degli avvisi (watch.sh)
+# Per ogni controllo: fails (fallimenti consecutivi), since (inizio del guasto), lastAlert,
+# alerted. Regole: si segnala solo dopo 2 controlli consecutivi falliti; poi un promemoria
+# ogni 6 ore; al rientro un messaggio "ripristinato" con la durata del guasto.
+# Lo stato sta nei "details" di ops-state/watch.json (formato rigido, riletto con grep).
+SM_IDS=""
+SM_REMIND_SECS=$((6 * 3600))
+SM_MIN_FAILS=2
+
+fmt_duration() { # secondi
+  local s="$1"
+  if [ "$s" -lt 120 ]; then echo "${s} s"
+  elif [ "$s" -lt 7200 ]; then echo "$((s / 60)) min"
+  else echo "$((s / 3600)) h $(( (s % 3600) / 60 )) min"; fi
+}
+_sm_set() { printf -v "SM_$1_$2" '%s' "$3"; }
+_sm_get() { local v="SM_$1_$2"; printf '%s' "${!v-}"; }
+sm_known() { case " $SM_IDS " in *" $1 "*) return 0 ;; *) return 1 ;; esac; }
+# sm_load <file.json>: legge lo stato dei controlli dai details
+sm_load() {
+  local f="$1" id fa si la al
+  SM_IDS=""
+  [ -f "$f" ] || return 0
+  while read -r id fa si la al; do
+    [ -n "$id" ] || continue
+    SM_IDS="$SM_IDS $id"
+    _sm_set F "$id" "$fa"; _sm_set S "$id" "$si"; _sm_set L "$id" "$la"; _sm_set A "$id" "$al"
+  done < <(grep -oE '"[a-z0-9_]+":\{"fails":[0-9]+,"since":[0-9]+,"lastAlert":[0-9]+,"alerted":(true|false)\}' "$f" \
+           | sed -E 's/^"([a-z0-9_]+)":\{"fails":([0-9]+),"since":([0-9]+),"lastAlert":([0-9]+),"alerted":(true|false)\}$/\1 \2 \3 \4 \5/')
+}
+# sm_json: i controlli come oggetto JSON (per i details)
+sm_json() {
+  local id out="" sep=""
+  for id in $SM_IDS; do
+    out="$out$sep\"$id\":{\"fails\":$(_sm_get F "$id"),\"since\":$(_sm_get S "$id"),\"lastAlert\":$(_sm_get L "$id"),\"alerted\":$(_sm_get A "$id")}"
+    sep=","
+  done
+  printf '{%s}' "$out"
+}
+# sm_eval <id> <ok|warn|err> "<messaggio>" "<suggerimento>"
+sm_eval() {
+  local id="$1" st="$2" msg="$3" hint="$4" now fa si la al lvl
+  now="$(now_epoch)"
+  if ! sm_known "$id"; then SM_IDS="$SM_IDS $id"; _sm_set F "$id" 0; _sm_set S "$id" 0; _sm_set L "$id" 0; _sm_set A "$id" false; fi
+  fa="$(_sm_get F "$id")"; si="$(_sm_get S "$id")"; la="$(_sm_get L "$id")"; al="$(_sm_get A "$id")"
+  if [ "$st" = ok ]; then
+    if [ "$al" = true ]; then
+      notify "Ripristinato: $msg (il problema è durato $(fmt_duration $((now - si))))." info
+    fi
+    fa=0; si=0; la=0; al=false
+  else
+    fa=$((fa + 1))
+    [ "$fa" -ne 1 ] || si="$now"
+    lvl=warn; [ "$st" = err ] && lvl=error
+    if [ "$al" != true ] && [ "$fa" -ge "$SM_MIN_FAILS" ]; then
+      notify "$msg${hint:+
+Suggerimento: $hint}" "$lvl"
+      al=true; la="$now"
+    elif [ "$al" = true ] && [ $((now - la)) -ge "$SM_REMIND_SECS" ]; then
+      notify "Promemoria — il problema dura da $(fmt_duration $((now - si))): $msg${hint:+
+Suggerimento: $hint}" "$lvl"
+      la="$now"
+    fi
+  fi
+  _sm_set F "$id" "$fa"; _sm_set S "$id" "$si"; _sm_set L "$id" "$la"; _sm_set A "$id" "$al"
 }
