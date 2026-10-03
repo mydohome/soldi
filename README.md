@@ -79,6 +79,10 @@ docker compose up -d --build
 
 Apri **http://localhost:3000**, crea un account e inizia.
 
+> **Installazione guidata:** `./ops/soldi setup` fa questi passaggi per te (controlla i prerequisiti,
+> chiede lo scenario di installazione, genera il `.env` con segreti casuali, avvia lo stack). Vedi
+> [docs/OPERATIONS.md](docs/OPERATIONS.md).
+
 Per fermare: `docker compose down` (i dati restano nel volume `db-data`).
 
 ---
