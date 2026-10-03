@@ -48,6 +48,7 @@ Funziona da smartphone e da desktop (interfaccia responsive), gira interamente c
 | 🗄️ **Backup** | CSV automatico ogni settimana + backup manuale on‑demand, **e ripristino**, tutto in **Impostazioni** — ogni utente sui propri dati. |
 | ⬆️ **Aggiornamento dall'app** | In **Impostazioni**, solo per l'**amministratore** (il primo utente creato, o `ADMIN_EMAIL`): controlla e installa l'ultima versione da git (`SELF_UPDATE_ENABLED=true`). |
 | 📤 **Esportazione** | Dalla vista Movimenti, **Esporta** in **Excel (.xlsx)** o **CSV** con i filtri attivi (periodo, tipo, categoria, conto, ambito, ricerca). Solo i tuoi dati, fino a 50.000 righe. |
+| 🛡️ **Gestione operativa** | Strumenti in `ops/` (comando `soldi`): backup giornaliero con dump verificato, copia fuori macchina cifrata (restic), prova di ripristino automatica, aggiornamento con rollback, sorveglianza con avvisi Telegram. Vedi **[docs/OPERATIONS.md](docs/OPERATIONS.md)**. |
 | ♻️ **Ripristino** | Comando singolo che ricarica i dati da un backup CSV. |
 | 🎨 **UI** | Design moderno, tema chiaro/scuro automatico, elementi grafici originali. |
 | 📖 **Guida in-app** | In **Impostazioni → Guida**: come aggiungere movimenti e gestire categorie, conti e spese fisse, con screenshot delle schermate. |
