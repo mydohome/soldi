@@ -108,7 +108,7 @@ TZVAL="${TZ_ARG:-$(ask 'Fuso orario' "$(read_kv "$APP_DIR/.env.example" TZ)")}"
 
 # --- 3. .env -----------------------------------------------------------------------------------
 ENVF="$COMPOSE_DIR/.env"
-PROJECT="${COMPOSE_PROJECT_NAME:-$(basename "$COMPOSE_DIR" | tr 'A-Z' 'a-z' | tr -c 'a-z0-9_-\n' '_')}"
+PROJECT="${COMPOSE_PROJECT_NAME:-$(basename "$COMPOSE_DIR" | tr 'A-Z' 'a-z' | tr -c 'a-z0-9_\n-' '_')}"
 db_volume_exists() {
   [ -n "$("$DOCKER" volume ls -q --filter "label=com.docker.compose.project=$PROJECT" --filter 'label=com.docker.compose.volume=db-data' 2>/dev/null)" ]
 }
