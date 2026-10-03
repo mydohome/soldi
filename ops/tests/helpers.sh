@@ -24,6 +24,9 @@ assert_file() { if [ -e "$1" ]; then _pass; else _fail "${2:-file mancante}: $1"
 assert_no_file() { if [ ! -e "$1" ]; then _pass; else _fail "${2:-file inatteso}: $1"; fi; }
 assert_rc() { if [ "$1" -eq "$2" ]; then _pass; else _fail "${3:-codice di uscita}: atteso $2, ottenuto $1"; fi; }
 
+# Permessi di un file (GNU stat prima: su Linux `stat -f` significa altro).
+fmode() { stat -c %a "$1" 2>/dev/null || stat -f %Lp "$1"; }
+
 # Crea una cartella di prova unica per ogni test.
 new_sandbox() { SB="$(mktemp -d "$SB_ROOT/t.XXXXXX")"; SB="$(cd "$SB" && pwd -P)"; export SB; }
 
@@ -157,7 +160,7 @@ case "$1" in
       *pg_isready*) exit "$(cat "$STUB_DIR/pgready_rc" 2>/dev/null || echo 0)" ;;
       *psql*) t="$(printf "%s" "$*" | sed -n "s/.*FROM \([a-z_]*\).*/\1/p")"; cat "$STUB_DIR/count.$t" 2>/dev/null || echo 0 ;;
     esac ;;
-  info) echo "${STUB_DOCKER_ROOT:-/var/lib/docker}" ;;
+  info) [ -z "${STUB_DOCKER_ROOT:-}" ] || echo "$STUB_DOCKER_ROOT" ;;
   *) exit 0 ;;
 esac'
   # restic: registra argomenti e le variabili rilevanti; esiti regolabili con restic.rc.<comando>

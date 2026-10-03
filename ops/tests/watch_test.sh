@@ -125,6 +125,13 @@ test_disco_quasi_pieno() {
   setup; DISK_WARN_PCT=101 watch $T0 >/dev/null; DISK_WARN_PCT=101 watch $((T0 + 300)) >/dev/null
   assert_contains "$(last_msg)" "AVVISO" "sopra la soglia di errore ma sotto quella di avviso"
 }
+test_disco_di_docker() {
+  setup; mkdir -p "$SB/docker-root"; export STUB_DOCKER_ROOT="$SB/docker-root"
+  DISK_ERR_PCT=101 watch $T0 >/dev/null; DISK_ERR_PCT=101 watch $((T0 + 300)) >/dev/null
+  assert_eq "$(msgs)" 2 "un messaggio per disco (backups e Docker)"
+  assert_contains "$(cat "$CURL_STDIN")" "sul disco di Docker"
+  assert_contains "$(cat "$CURL_STDIN")" "sul disco dei backup"
+}
 test_riavvio_host_una_sola_volta() {
   setup
   watch $T0 >/dev/null
@@ -188,7 +195,7 @@ EOF2
   assert_eq "$(watch $T0)" 0
   assert_contains "$(cat "$SB/out")" "salto"
   assert_no_file "$HOME_DIR/ops-state/watch.json" "lo stato non viene toccato"
-  kill "$hp" 2>/dev/null; wait "$hp" 2>/dev/null || true
+  pkill -P "$hp" 2>/dev/null; kill "$hp" 2>/dev/null; wait "$hp" 2>/dev/null || true
 }
 test_simulate_fault_passa_dalla_macchina_a_stati() {
   setup

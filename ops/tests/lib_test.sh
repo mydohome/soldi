@@ -92,7 +92,7 @@ test_state_write_contratto() {
   assert_contains "$body" '"startedAt":"2023-11-14T22:13:20Z","finishedAt":"2023-11-14T22:13:32Z","durationMs":12000'
   assert_contains "$body" '"message":"fatto \"bene\""'
   assert_contains "$body" '"details":{"n":3}'
-  assert_eq "$(file_perm=$(stat -f %Lp "$f" 2>/dev/null || stat -c %a "$f"); echo "$file_perm")" 600 "permessi 600"
+  assert_eq "$(file_perm=$(fmode "$f"); echo "$file_perm")" 600 "permessi 600"
   in_lib "$HOME_DIR" 'detect_layout; state_write backup fail "rotto"; state_write x warn "attenzione"'
   assert_contains "$(cat "$f")" '"ok":false,"status":"fail"'
   assert_contains "$(cat "$HOME_DIR/ops-state/x.json")" '"ok":true,"status":"warn"'
@@ -145,7 +145,8 @@ EOF2
   out="$(in_lib "$HOME_DIR" 'detect_layout; lock_acquire provalock' 2>&1)"; rc=$?
   assert_ne "$rc" 0 "il secondo deve fallire"
   assert_contains "$out" "già in corso"
-  kill "$hp" 2>/dev/null; wait "$hp" 2>/dev/null
+  # i figli (sleep) ereditano il descrittore del lock: si fermano insieme al padre
+  pkill -P "$hp" 2>/dev/null; kill "$hp" 2>/dev/null; wait "$hp" 2>/dev/null
   out="$(in_lib "$HOME_DIR" 'detect_layout; lock_acquire provalock; echo preso' 2>&1)"
   assert_contains "$out" "preso" "dopo la fine del primo il lock è di nuovo libero"
 }

@@ -127,7 +127,7 @@ test_dr_completo_da_cartella() {
   assert_eq "$(dr --source-dir "$SRC")" 0
   assert_file "$NEW/app/.git" "repository clonato in app/"
   assert_eq "$(grep '^JWT_SECRET=' "$NEW/.env")" "JWT_SECRET=originale" ".env originale ripristinato"
-  assert_eq "$(stat -f %Lp "$NEW/.env" 2>/dev/null || stat -c %a "$NEW/.env")" 600
+  assert_eq "$(fmode "$NEW/.env")" 600
   assert_file "$NEW/backups/soldi-backup-2026-10-01_03-00-00-000/manifest.json"
   assert_file "$NEW/docker-compose.yml"
   log="$(dc_log)"

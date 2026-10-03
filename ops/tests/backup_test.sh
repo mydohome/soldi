@@ -12,7 +12,7 @@ test_backup_ok() {
   assert_eq "$(backup)" 0
   dumps=("$HOME_DIR"/backups/dumps/soldi-*.sql.gz)
   assert_eq "${#dumps[@]}" 1
-  assert_eq "$(stat -f %Lp "${dumps[0]}" 2>/dev/null || stat -c %a "${dumps[0]}")" 600 "dump 600"
+  assert_eq "$(fmode "${dumps[0]}")" 600 "dump 600"
   assert_eq "$(gzip -dc "${dumps[0]}" | tail -n 1)" "-- PostgreSQL database dump complete"
   assert_eq "$(count_files "$HOME_DIR"/backups/soldi-backup-*/manifest.json)" 1
   assert_contains "$(dc_log)" "exec -T web npm run backup"

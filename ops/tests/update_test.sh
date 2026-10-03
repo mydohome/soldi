@@ -112,7 +112,7 @@ EOF2
   assert_eq "$(update)" 1
   assert_contains "$(cat "$SB/out")" "già in corso"
   assert_eq "$(head_of)" "$C1"
-  kill "$hp" 2>/dev/null; wait "$hp" 2>/dev/null || true
+  pkill -P "$hp" 2>/dev/null; kill "$hp" 2>/dev/null; wait "$hp" 2>/dev/null || true
 }
 test_6_senza_healthcheck_usa_la_sonda_di_riserva() {
   setup; echo none > "$STUB_DIR/inspect.out"
