@@ -1,7 +1,7 @@
 'use strict';
 
 const { pool } = require('../db/pool');
-const { monthStart, addMonthsKey, scheduleEndMonth } = require('./schedule');
+const { monthStart, addMonthsKey, scheduleEndMonth, skippedSet } = require('./schedule');
 
 const pad = (n) => String(n).padStart(2, '0');
 const monthOfYear = (key) => Number(key.slice(5, 7));
@@ -54,14 +54,17 @@ async function generateDue({ userId, now = new Date() } = {}) {
       const lastDueMonth =
         currentDay >= rule.day_of_month ? currentMonth : addMonthsKey(currentMonth, -1);
 
-      // A fixed-length rule never generates past the end of its schedule.
+      // A fixed-length rule never generates past the end of its schedule (le rate «saltate» dall'utente
+      // spostano la fine in avanti e non generano nulla).
       const endMonth = scheduleEndMonth(rule, startMonth);
+      const skipped = skippedSet(rule.skipped_months);
       const windowEnd = endMonth && endMonth < lastDueMonth ? endMonth : lastDueMonth;
 
       let createdForRule = 0;
       if (windowEnd >= fromMonth) {
         for (let m = fromMonth; m <= windowEnd; m = addMonthsKey(m, 1)) {
           if (rule.cadence === 'yearly' && monthOfYear(m) !== rule.month) continue;
+          if (skipped.has(m.slice(0, 7))) continue;
 
           const res = await client.query(
             `INSERT INTO transactions

@@ -3,12 +3,15 @@
 const express = require('express');
 const { z } = require('zod');
 
-const { query } = require('../db/pool');
+const { query, withTransaction } = require('../db/pool');
 const { requireAuth } = require('../auth/middleware');
 const { handler, httpError } = require('../http/validate');
 const { assertCategory, categoryPairChanged } = require('../http/category-check');
 const { generateDue } = require('../recurring/generate');
-const { installmentProgress } = require('../recurring/schedule');
+const {
+  installmentProgress, monthKey, monthsBetween, addMonthsKey, firstSlotKey, scheduleEndMonth,
+  skippedSet, skippedToString, dueSlots,
+} = require('../recurring/schedule');
 
 const router = express.Router();
 router.use(requireAuth);
@@ -27,7 +30,12 @@ const ruleShape = z.object({
   totalOccurrences: z.coerce.number().int().min(1).max(600).nullable().optional(),
   note: z.string().trim().max(280).default(''),
   active: z.boolean().default(true),
+  // Mese di inizio (YYYY-MM, oppure YYYY-MM-DD: conta il mese). Se è nel passato i movimenti dei
+  // mesi trascorsi vengono creati subito; se si cambia su una regola esistente i movimenti già
+  // generati si spostano di conseguenza.
+  startMonth: z.string().regex(/^\d{4}-(0[1-9]|1[0-2])(-\d{2})?$/, 'Data di inizio non valida (AAAA-MM)').optional(),
 });
+const normalizeStart = (s) => `${s.slice(0, 7)}-01`;
 
 const yearlyNeedsMonth = (v) => v.cadence !== 'yearly' || v.month != null;
 const yearlyMonthIssue = { message: 'Per una spesa fissa annuale serve il mese', path: ['month'] };
@@ -64,6 +72,8 @@ function shape(row) {
     active: row.active,
     startMonth: rule.start_month,
     lastRunMonth: rule.last_run_month,
+    // mesi saltati dal piano (rate non addebitate su richiesta dell'utente), 'YYYY-MM'
+    skippedMonths: [...skippedSet(row.skipped_months)].sort(),
     // Avanzamento a calendario (null per le regole a tempo indeterminato). Non
     // dipende da occurrencesDone, che conta i movimenti ed è quindi sensibile
     // alla cancellazione di un movimento generato.
@@ -104,8 +114,8 @@ router.post(
 
     const inserted = await query(
       `INSERT INTO recurring_rules
-         (user_id, name, type, amount_cents, category_id, account_id, scope, cadence, month, day_of_month, total_occurrences, note, active)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
+         (user_id, name, type, amount_cents, category_id, account_id, scope, cadence, month, day_of_month, total_occurrences, note, active, start_month)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, COALESCE($14::date, date_trunc('month', CURRENT_DATE)::date))
        RETURNING id`,
       [
         req.user.id,
@@ -121,12 +131,107 @@ router.post(
         input.totalOccurrences ?? null,
         input.note,
         input.active,
+        input.startMonth ? normalizeStart(input.startMonth) : null,
       ]
     );
-    // Generate any occurrence already due for the new rule.
+    // Generate any occurrence already due for the new rule (con un inizio nel passato, anche gli arretrati).
     const gen = await generateDue({ userId: req.user.id });
     const row = await query(`${SELECT_RULE} WHERE r.id = $1`, [inserted.rows[0].id]);
     res.status(201).json({ rule: shape(row.rows[0]), generated: gen.created });
+  })
+);
+
+// ---------------------------------------------------------------- cambio della data di inizio
+// Cambiando l'inizio i movimenti già generati si spostano dello stesso numero di mesi del primo
+// slot (di anni interi per le annuali); lo spostamento vale anche per il cursore dell'ultimo mese
+// generato e per le rate saltate, così la data finale (se la regola ha un numero di rate) slitta
+// di conseguenza. Se nello stesso salvataggio cambiano anche cadenza o mese, i movimenti esistenti
+// non hanno più una corrispondenza con gli slot: non si spostano.
+function startShiftPlan(cur, newStartKey, patch = {}) {
+  const cadence = patch.cadence ?? cur.cadence;
+  const month = cadence === 'yearly' ? patch.month ?? cur.month : null;
+  const oldStart = monthKey(cur.start_month);
+  const compatible = cadence === cur.cadence && (cadence !== 'yearly' || month === cur.month);
+  const oldFirst = firstSlotKey(cur, oldStart);
+  const newFirst = firstSlotKey({ ...cur, cadence, month }, newStartKey);
+  const delta = compatible ? monthsBetween(oldFirst, newFirst) : 0;
+  return { compatible, delta, oldFirst, newFirst };
+}
+const shiftKey = (key, delta) => addMonthsKey(monthKey(key), delta);
+function shiftedRule(cur, newStartKey, delta) {
+  return {
+    ...cur,
+    start_month: newStartKey,
+    last_run_month: cur.last_run_month && delta ? shiftKey(cur.last_run_month, delta) : cur.last_run_month,
+    skipped_months: skippedToString(new Set([...skippedSet(cur.skipped_months)].map((k) => shiftKey(`${k}-01`, delta).slice(0, 7)))),
+  };
+}
+
+async function shiftStart(client, cur, newStartKey, patch) {
+  const plan = startShiftPlan(cur, newStartKey, patch);
+  if (!plan.compatible || plan.delta === 0) return { applied: false, movements: 0, months: 0 };
+  const { delta } = plan;
+  // Un movimento alla volta, dal più lontano nella direzione dello spostamento: l'indice univoco
+  // (regola, mese) non deve mai vedere due movimenti nello stesso mese.
+  const rows = await client.query(
+    `SELECT id FROM transactions WHERE recurring_rule_id = $1 AND user_id = $2 ORDER BY occurred_on ${delta > 0 ? 'DESC' : 'ASC'}, id`,
+    [cur.id, cur.user_id]
+  );
+  for (const r of rows.rows) {
+    await client.query(`UPDATE transactions SET occurred_on = (occurred_on + make_interval(months => $2::int))::date WHERE id = $1`, [r.id, delta]);
+  }
+  const after = shiftedRule(cur, newStartKey, delta);
+  await client.query('UPDATE recurring_rules SET last_run_month = $2, skipped_months = $3 WHERE id = $1', [cur.id, after.last_run_month, after.skipped_months]);
+  return { applied: true, movements: rows.rowCount, months: delta };
+}
+
+// Anteprima (nessuna scrittura) di che cosa succede cambiando l'inizio: serve alla conferma nell'interfaccia.
+router.get(
+  '/:id/start-preview',
+  handler(async (req, res) => {
+    const id = z.coerce.number().int().positive().parse(req.params.id);
+    // cadenza e mese facoltativi: se cambiano insieme all'inizio, i movimenti esistenti non si spostano
+    const q = z
+      .object({
+        startMonth: ruleShape.shape.startMonth.unwrap(),
+        cadence: z.enum(['monthly', 'yearly']).optional(),
+        month: z.coerce.number().int().min(1).max(12).optional(),
+      })
+      .parse(req.query);
+    const { startMonth } = q;
+    const found = await query('SELECT * FROM recurring_rules WHERE id = $1 AND user_id = $2', [id, req.user.id]);
+    if (found.rowCount === 0) throw httpError(404, 'not_found', 'Spesa fissa non trovata');
+    const cur = found.rows[0];
+    const newStart = normalizeStart(startMonth);
+    const changed = newStart !== monthKey(cur.start_month);
+    const plan = startShiftPlan(cur, newStart, { cadence: q.cadence, month: q.month });
+    const after = shiftedRule(cur, newStart, plan.delta);
+
+    const mov = await query(
+      `SELECT COUNT(*)::int AS n,
+              COUNT(*) FILTER (WHERE (occurred_on + make_interval(months => $3::int))::date >= date_trunc('month', CURRENT_DATE + interval '1 month'))::int AS future
+       FROM transactions WHERE recurring_rule_id = $1 AND user_id = $2`,
+      [id, req.user.id, plan.delta]
+    );
+    // mesi che generateDue creerebbe subito dopo lo spostamento (arretrati)
+    const now = new Date();
+    const curMonth = `${now.getUTCFullYear()}-${String(now.getUTCMonth() + 1).padStart(2, '0')}-01`;
+    const lastDue = now.getUTCDate() >= cur.day_of_month ? curMonth : addMonthsKey(curMonth, -1);
+    const backfill = cur.active ? dueSlots(after, after.last_run_month, lastDue).length : 0;
+    const endBefore = scheduleEndMonth(cur, monthKey(cur.start_month));
+    const endAfter = scheduleEndMonth(after, newStart);
+    res.json({
+      changed,
+      shifted: changed && plan.compatible && plan.delta !== 0,
+      months: changed && plan.compatible ? plan.delta : 0,
+      movements: mov.rows[0].n,
+      futureMovements: changed && plan.compatible ? mov.rows[0].future : 0,
+      firstBefore: plan.oldFirst.slice(0, 7),
+      firstAfter: plan.newFirst.slice(0, 7),
+      endBefore: endBefore ? endBefore.slice(0, 7) : null,
+      endAfter: endAfter ? endAfter.slice(0, 7) : null,
+      backfill,
+    });
   })
 );
 
@@ -148,58 +253,69 @@ router.patch(
     }
     if ('accountId' in patch) await assertOwned('accounts', 'account', req.user.id, patch.accountId ?? null);
 
-    const updated = await query(
-      `UPDATE recurring_rules
-       SET name = COALESCE($3, name),
-           type = COALESCE($4, type),
-           amount_cents = COALESCE($5, amount_cents),
-           category_id = CASE WHEN $6::boolean THEN $7 ELSE category_id END,
-           account_id = CASE WHEN $8::boolean THEN $9 ELSE account_id END,
-           scope = COALESCE($10, scope),
-           cadence = COALESCE($11, cadence),
-           month = CASE
-                     WHEN COALESCE($11, cadence) = 'monthly' THEN NULL
-                     WHEN $12::int IS NOT NULL THEN $12
-                     ELSE month
-                   END,
-           day_of_month = COALESCE($13, day_of_month),
-           total_occurrences = CASE WHEN $16::boolean THEN $17 ELSE total_occurrences END,
-           note = COALESCE($14, note),
-           -- On reactivation, resume from the current month: don't backfill the
-           -- months the rule spent switched off.
-           last_run_month = CASE
-             WHEN $15::boolean IS TRUE AND active IS FALSE
-             THEN GREATEST(last_run_month, (date_trunc('month', CURRENT_DATE) - interval '1 month')::date)
-             ELSE last_run_month
-           END,
-           active = COALESCE($15, active)
-       WHERE id = $1 AND user_id = $2
-       RETURNING id`,
-      [
-        id,
-        req.user.id,
-        patch.name ?? null,
-        patch.type ?? null,
-        patch.amount != null ? toCents(patch.amount) : null,
-        'categoryId' in patch,
-        patch.categoryId ?? null,
-        'accountId' in patch,
-        patch.accountId ?? null,
-        patch.scope ?? null,
-        patch.cadence ?? null,
-        patch.month ?? null,
-        patch.dayOfMonth ?? null,
-        patch.note ?? null,
-        patch.active ?? null,
-        'totalOccurrences' in patch,
-        patch.totalOccurrences ?? null,
-      ]
-    );
-    if (updated.rowCount === 0) throw httpError(404, 'not_found', 'Spesa fissa non trovata');
+    const newStart = patch.startMonth ? normalizeStart(patch.startMonth) : null;
+    let shifted = { applied: false, movements: 0, months: 0 };
+    await withTransaction(async (client) => {
+      const found = await client.query('SELECT * FROM recurring_rules WHERE id = $1 AND user_id = $2 FOR UPDATE', [id, req.user.id]);
+      if (found.rowCount === 0) throw httpError(404, 'not_found', 'Spesa fissa non trovata');
+      const cur = found.rows[0];
+      if (newStart && newStart !== monthKey(cur.start_month)) shifted = await shiftStart(client, cur, newStart, patch);
+      const updated = await client.query(
+        `UPDATE recurring_rules
+         SET name = COALESCE($3, name),
+             type = COALESCE($4, type),
+             amount_cents = COALESCE($5, amount_cents),
+             category_id = CASE WHEN $6::boolean THEN $7 ELSE category_id END,
+             account_id = CASE WHEN $8::boolean THEN $9 ELSE account_id END,
+             scope = COALESCE($10, scope),
+             cadence = COALESCE($11, cadence),
+             month = CASE
+                       WHEN COALESCE($11, cadence) = 'monthly' THEN NULL
+                       WHEN $12::int IS NOT NULL THEN $12
+                       ELSE month
+                     END,
+             day_of_month = COALESCE($13, day_of_month),
+             total_occurrences = CASE WHEN $16::boolean THEN $17 ELSE total_occurrences END,
+             note = COALESCE($14, note),
+             -- On reactivation, resume from the current month: don't backfill the
+             -- months the rule spent switched off.
+             last_run_month = CASE
+               WHEN $15::boolean IS TRUE AND active IS FALSE
+               THEN GREATEST(last_run_month, (date_trunc('month', CURRENT_DATE) - interval '1 month')::date)
+               ELSE last_run_month
+             END,
+             active = COALESCE($15, active),
+             start_month = COALESCE($18::date, start_month)
+         WHERE id = $1 AND user_id = $2
+         RETURNING id`,
+        [
+          id,
+          req.user.id,
+          patch.name ?? null,
+          patch.type ?? null,
+          patch.amount != null ? toCents(patch.amount) : null,
+          'categoryId' in patch,
+          patch.categoryId ?? null,
+          'accountId' in patch,
+          patch.accountId ?? null,
+          patch.scope ?? null,
+          patch.cadence ?? null,
+          patch.month ?? null,
+          patch.dayOfMonth ?? null,
+          patch.note ?? null,
+          patch.active ?? null,
+          'totalOccurrences' in patch,
+          patch.totalOccurrences ?? null,
+          newStart,
+        ]
+      );
+      if (updated.rowCount === 0) throw httpError(404, 'not_found', 'Spesa fissa non trovata');
+
+    });
 
     const gen = await generateDue({ userId: req.user.id });
     const row = await query(`${SELECT_RULE} WHERE r.id = $1`, [id]);
-    res.json({ rule: shape(row.rows[0]), generated: gen.created });
+    res.json({ rule: shape(row.rows[0]), generated: gen.created, shifted });
   })
 );
 

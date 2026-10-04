@@ -194,7 +194,7 @@ router.get(
     if (q.includeRecurring) {
       recurring = await query(
         `SELECT r.amount_cents, r.scope, r.category_id, r.cadence, r.month,
-                r.start_month, r.total_occurrences,
+                r.start_month, r.total_occurrences, r.skipped_months,
                 c.name AS category_name, c.color AS category_color
          FROM recurring_rules r
          LEFT JOIN categories c ON c.id = r.category_id
