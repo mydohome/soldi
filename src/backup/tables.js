@@ -34,6 +34,7 @@ module.exports = [
       'active',
       'start_month',
       'last_run_month',
+      'skipped_months',
       'created_at',
     ],
   },

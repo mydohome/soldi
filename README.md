@@ -315,6 +315,15 @@ In NPM: **Forward Hostname** `<IP_DEL_SERVER_SOLDI>`, **Forward Port** `3010`,
   generati hanno il badge «fissa» e restano modificabili. All'avvio l'app recupera i
   mesi/anni arretrati (utile dopo un fermo del server); riattivando una regola **non** si
   recuperano i periodi in cui era spenta.
+  **Data di inizio**: ogni regola ha il mese da cui parte (di default il mese corrente; se è nel passato
+  i movimenti dei mesi trascorsi vengono creati subito). Cambiandola su una regola esistente, dopo una
+  conferma che mostra l'effetto, i movimenti già generati si **spostano** dello stesso numero di mesi
+  (di anni, per le annuali) e la **data dell'ultima rata** slitta con loro; se nello stesso salvataggio
+  cambi anche la cadenza i movimenti non si spostano.
+  **Eliminare il movimento di una rata** di una regola a durata limitata chiede se **aggiornare lo stato
+  delle rate**: «Elimina e aggiorna le rate» fa risultare la rata non addebitata (il mese diventa una
+  rata saltata) e sposta l'ultima rata di un mese; «Elimina soltanto il movimento» lascia la rata contata
+  come addebitata. Per le regole a tempo indeterminato si elimina senza domande.
 - **Movimenti → Esporta** — scarica i movimenti con i filtri della vista (senza periodo: tutti, fino
   a 50.000). **Excel**: foglio «Movimenti» (Data, Tipo, Importo, Categoria, Conto, Ambito, Nota, Netto,
   Spesa fissa; date e importi veri, intestazione bloccata, filtro automatico) e foglio «Info» con
@@ -707,11 +716,12 @@ Tutte sotto `/api`, JSON, autenticazione via cookie di sessione.
 | `GET`  | `/api/transactions` | Lista (filtri: `q`, `from`, `to`, `type`, `categoryId`, `accountId`, `scope`, `limit`, `offset`) |
 | `POST` | `/api/transactions` | Crea movimento (`accountId`, `scope` opzionali) |
 | `PATCH`| `/api/transactions/:id` | Modifica |
-| `DELETE`| `/api/transactions/:id` | Elimina |
+| `DELETE`| `/api/transactions/:id` | Elimina; con `?updateRates=true`, se è la rata di una spesa fissa a durata limitata, la rata diventa «saltata» e l'ultima slitta |
+| `GET`  | `/api/transactions/:id/rate-impact` | Effetto di «aggiorna le rate» eliminando quel movimento (`applicable`, rata n di N, nuova data finale) |
 | `GET`  | `/api/transactions/suggest?note&type&scope` | Suggerimenti (descrizione, categoria, conto) dallo storico |
 | `GET`/`POST`/`PATCH`/`DELETE` | `/api/categories` | Gestione categorie (`kind`, `scope`: personal\|home) |
 | `GET`/`POST`/`PATCH`/`DELETE` | `/api/accounts` | Gestione conti |
-| `GET`/`POST`/`PATCH`/`DELETE` | `/api/recurring` | Gestione spese fisse (`cadence`: monthly\|yearly + `month`; `totalOccurrences` per la durata limitata, con `progress` = avanzamento a calendario, residuo e versato; `DELETE ?keepMovimenti=true` tiene i movimenti già generati) |
+| `GET`/`POST`/`PATCH`/`DELETE` | `/api/recurring` | Gestione spese fisse (`cadence`: monthly\|yearly + `month`; `totalOccurrences` per la durata limitata, con `progress` = avanzamento a calendario, residuo e versato; `startMonth` (AAAA-MM) per l'inizio, `GET /api/recurring/:id/start-preview` per l'anteprima dello spostamento; `DELETE ?keepMovimenti=true` tiene i movimenti già generati) |
 | `POST` | `/api/recurring/run` | Genera subito i movimenti fissi dovuti |
 | `GET`/`POST`/`PATCH`/`DELETE` | `/api/planned` | Gestione voci di budget (spese previste) |
 | `GET`  | `/api/planned/summary?year=YYYY&includeRecurring=true\|false&scope=` | Previsione annuale: totali, proiezione, budget mensile necessario, risparmio potenziale, per mese/categoria/ambito |

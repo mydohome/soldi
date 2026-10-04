@@ -166,6 +166,11 @@ BEGIN
   END IF;
 END $$;
 
+-- Rate "saltate": mesi (YYYY-MM, separati da virgola) che il piano di una spesa fissa non conta più.
+-- Si aggiunge un mese quando l'utente elimina il movimento di una rata e chiede di aggiornare lo
+-- stato delle rate: la rata non risulta addebitata e la data finale slitta di conseguenza.
+ALTER TABLE recurring_rules ADD COLUMN IF NOT EXISTS skipped_months TEXT NOT NULL DEFAULT '';
+
 -- One generated movimento per rule per month. The ::timestamp cast forces the
 -- IMMUTABLE date_trunc overload (the date/timestamptz one is only STABLE).
 CREATE UNIQUE INDEX IF NOT EXISTS uq_tx_rule_month

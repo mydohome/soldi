@@ -5,7 +5,7 @@ const path = require('path');
 const { parse } = require('csv-parse/sync');
 
 // Columns where an empty CSV field is a real empty string, not NULL.
-const KEEP_EMPTY = new Set(['note', 'display_name']);
+const KEEP_EMPTY = new Set(['note', 'display_name', 'skipped_months']);
 
 /**
  * Legge <table>.csv da una cartella di backup e ritorna { columns, rows }.

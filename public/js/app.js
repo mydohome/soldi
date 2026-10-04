@@ -917,6 +917,10 @@ async function viewSpeseFisse(main) {
           r.cadence === 'monthly'
             ? 'ogni mese, il ' + r.dayOfMonth
             : 'ogni anno a ' + MONTHS_LONG[(r.month || 1) - 1] + ', il ' + r.dayOfMonth
+        }${r.startMonth ? ' · dal ' + ymLabel(r.startMonth) : ''}${
+          r.skippedMonths?.length
+            ? ` · ${r.skippedMonths.length} ${r.skippedMonths.length === 1 ? 'rata saltata' : 'rate saltate'}`
+            : ''
         }${r.categoryName ? ' · ' + escapeHtml(r.categoryName) : ''}${
           r.accountName ? ' · ' + escapeHtml(r.accountName) : ''
         }</div>
@@ -1049,6 +1053,7 @@ async function openRecurringModal(rule = null, onChange) {
     totalOccurrences: null,
     note: '',
     active: true,
+    startMonth: `${today().slice(0, 7)}-01`,
   };
 
   const { bd, close } = modal(`
@@ -1085,6 +1090,12 @@ async function openRecurringModal(rule = null, onChange) {
             (m, i) => `<option value="${i + 1}" ${r.month === i + 1 ? 'selected' : ''}>${capitalize(m)}</option>`
           ).join('')}
         </select>
+      </div>
+      <div class="field">
+        <label for="rstart">Data di inizio</label>
+        <input id="rstart" name="startMonth" type="month" required placeholder="AAAA-MM" pattern="\\d{4}-\\d{2}"
+               value="${escapeHtml((r.startMonth || '').slice(0, 7))}" />
+        <span class="muted" id="rstart-hint" style="font-size:.82rem"></span>
       </div>
       ${catField('rcat', 'Categoria', 'categoryId')}
       <div class="field">
@@ -1207,11 +1218,23 @@ async function openRecurringModal(rule = null, onChange) {
     fillCats(catSel.value || r.categoryId);
   });
 
+  const startHint = form.querySelector('#rstart-hint');
+  const updateStartHint = () => {
+    startHint.textContent = editing
+      ? 'Cambiandola, i movimenti già generati si spostano di conseguenza e la data dell’ultima rata slitta.'
+      : 'Se è nel passato, i movimenti dei mesi trascorsi vengono creati subito.';
+  };
+  updateStartHint();
+
   form.querySelector('#rec-cancel').addEventListener('click', close);
   form.addEventListener('submit', async (e) => {
     e.preventDefault();
     const fd = Object.fromEntries(new FormData(form));
     const occ = durInput.checked ? Number(fd.totalOccurrences) : null;
+    if (!/^\d{4}-(0[1-9]|1[0-2])$/.test(fd.startMonth || '')) {
+      form.querySelector('#rec-err').textContent = 'Inserisci la data di inizio nel formato AAAA-MM';
+      return;
+    }
     if (durInput.checked && !(occ >= 1)) {
       form.querySelector('#rec-err').textContent = 'Inserisci il numero di rate (almeno 1)';
       return;
@@ -1229,18 +1252,57 @@ async function openRecurringModal(rule = null, onChange) {
       scope,
       note: fd.note || '',
       active: form.querySelector('#ractive').checked,
+      startMonth: fd.startMonth,
     };
     const btn = form.querySelector('button[type=submit]');
     btn.disabled = true;
     try {
+      // Cambiando la data di inizio di una regola esistente si mostra che cosa succede ai movimenti.
+      if (editing && fd.startMonth !== (r.startMonth || '').slice(0, 7)) {
+        const qs = new URLSearchParams({ startMonth: fd.startMonth, cadence });
+        if (cadence === 'yearly') qs.set('month', fd.month);
+        const prev = await api.get(`/api/recurring/${rule.id}/start-preview?${qs}`);
+        const unitYear = cadence === 'yearly';
+        const lines = [];
+        if (prev.shifted) {
+          const n = Math.abs(prev.months);
+          const span = unitYear ? `${n / 12} ${n / 12 === 1 ? 'anno' : 'anni'}` : `${n} ${n === 1 ? 'mese' : 'mesi'}`;
+          lines.push(
+            `I <strong>${prev.movements}</strong> movimenti già generati si spostano di <strong>${span}</strong> ${
+              prev.months > 0 ? 'in avanti' : 'indietro'
+            } (il primo passa da ${ymLabel(prev.firstBefore)} a ${ymLabel(prev.firstAfter)}).`
+          );
+          if (prev.futureMovements) lines.push(`⚠ ${prev.futureMovements} di questi finiranno in mesi futuri.`);
+        } else if (prev.movements && (cadence !== r.cadence || (cadence === 'yearly' && Number(fd.month) !== r.month))) {
+          lines.push('Hai cambiato anche la cadenza: i movimenti già generati <strong>non</strong> si spostano.');
+        }
+        if (prev.endBefore && prev.endAfter && prev.endBefore !== prev.endAfter) {
+          lines.push(`La data dell'ultima rata passa da <strong>${ymLabel(prev.endBefore)}</strong> a <strong>${ymLabel(prev.endAfter)}</strong>.`);
+        }
+        if (prev.backfill) lines.push(`Vengono creati subito <strong>${prev.backfill}</strong> movimenti per i mesi arretrati.`);
+        if (lines.length) {
+          const ok = await choiceModal({
+            title: 'Cambiare la data di inizio?',
+            body: lines.map((l) => `<p>${l}</p>`).join(''),
+            buttons: [
+              { label: 'Conferma e salva', value: 'ok', kind: 'primary' },
+              { label: 'Annulla', value: null, kind: 'ghost' },
+            ],
+          });
+          if (ok !== 'ok') {
+            btn.disabled = false;
+            return;
+          }
+        }
+      }
       const res = editing
         ? await api.patch(`/api/recurring/${rule.id}`, body)
         : await api.post('/api/recurring', body);
       close();
       const g = res.generated || 0;
+      const moved = res.shifted?.applied ? ` · ${res.shifted.movements} movimenti spostati` : '';
       toast(
-        (editing ? 'Spesa fissa aggiornata' : 'Spesa fissa creata') +
-          (g > 0 ? ` · ${g} movimenti generati` : '')
+        (editing ? 'Spesa fissa aggiornata' : 'Spesa fissa creata') + moved + (g > 0 ? ` · ${g} movimenti generati` : '')
       );
       onChange?.();
     } catch (ex) {
@@ -1870,7 +1932,7 @@ const GUIDE_STEPS = [
   },
   {
     title: 'Gestire le spese fisse',
-    body: `In «Spese fisse» crei regole ricorrenti (affitto, abbonamenti, stipendio…) che generano automaticamente un movimento ogni mese, o una volta l'anno, il giorno indicato. Disattivando una regola smette di generare movimenti senza cancellare lo storico; i movimenti che genera hanno il badge «fissa».`,
+    body: `In «Spese fisse» crei regole ricorrenti (affitto, abbonamenti, stipendio…) che generano automaticamente un movimento ogni mese, o una volta l'anno, il giorno indicato. Ogni regola ha una data di inizio (se è nel passato, i movimenti arretrati si creano subito: cambiandola, i movimenti già generati si spostano con la data finale) e puoi limitarla a un numero di rate. Disattivando una regola smette di generare movimenti senza cancellare lo storico; i movimenti che genera hanno il badge «fissa». Se ne elimini uno, l'app ti chiede se aggiornare lo stato delle rate.`,
     shots: [
       { src: '/img/guide/spese-fisse.png', alt: 'Elenco delle spese fisse configurate' },
       { src: '/img/guide/nuova-spesa-fissa.png', alt: 'Form per creare una nuova spesa fissa' },
@@ -2171,7 +2233,7 @@ function txRow(t) {
     .map(escapeHtml)
     .join(' · ');
   return `
-    <div class="tx" data-id="${t.id}">
+    <div class="tx" data-id="${t.id}" data-rule="${t.recurringRuleId || ''}">
       <span class="swatch" style="background:${t.categoryColor || 'var(--ink-faint)'}">${escapeHtml(initial)}</span>
       <div class="meta">
         <div class="name">${escapeHtml(t.note || t.categoryName || (t.type === 'income' ? 'Entrata' : 'Spesa'))} ${scopeBadge(t.scope)}${
@@ -2187,6 +2249,72 @@ function txRow(t) {
     </div>`;
 }
 
+// «2026-03» → «mar 2026»
+const ymLabel = (ym) => `${MONTHS_SHORT[Number(ym.slice(5, 7)) - 1].toLowerCase()} ${ym.slice(0, 4)}`;
+
+// Finestra di scelta con più pulsanti → il `value` del pulsante premuto, oppure null se si chiude
+// (Esc, clic fuori) o si annulla.
+function choiceModal({ title, body, buttons }) {
+  return new Promise((resolve) => {
+    let done = false;
+    const finish = (v) => {
+      if (!done) {
+        done = true;
+        resolve(v);
+      }
+    };
+    const { bd, close } = modal(
+      `<h2>${escapeHtml(title)}</h2>
+       <div class="choice-body">${body}</div>
+       <div class="modal-actions choice-actions">${buttons
+         .map((b, i) => `<button type="button" class="btn ${b.kind || ''}" data-i="${i}">${escapeHtml(b.label)}</button>`)
+         .join('')}</div>`,
+      () => finish(null)
+    );
+    bd.querySelectorAll('[data-i]').forEach((el) =>
+      el.addEventListener('click', () => {
+        finish(buttons[Number(el.dataset.i)].value);
+        close();
+      })
+    );
+    bd.querySelector('[data-i]')?.focus();
+  });
+}
+
+// Eliminando il movimento di una rata di una spesa fissa a durata limitata si chiede se aggiornare
+// lo stato delle rate. → { updateRates } oppure null se l'utente annulla.
+async function askRateUpdate(txId, hasRule) {
+  if (!hasRule) return { updateRates: false };
+  let imp;
+  try {
+    imp = await api.get(`/api/transactions/${txId}/rate-impact`);
+  } catch {
+    return { updateRates: false }; // l'anteprima è un extra: senza, si elimina come sempre
+  }
+  if (!imp.applicable) return { updateRates: false };
+  const unit = imp.cadence === 'yearly' ? 'occorrenza' : 'rata';
+  const body = `
+    <p>Questo movimento è la <strong>${unit} ${imp.number} di ${imp.total}</strong> della spesa fissa
+       «${escapeHtml(imp.ruleName)}».</p>
+    <p><strong>Elimina e aggiorna le rate</strong>: la ${unit} risulta non addebitata (da ${imp.doneBefore} a
+       ${imp.doneAfter} di ${imp.total}) e l'ultima slitta da ${ymLabel(imp.endBefore)} a ${ymLabel(imp.endAfter)}${
+         imp.willGenerateNow ? ' (il movimento corrispondente viene creato subito)' : ''
+       }.</p>
+    <p><strong>Elimina soltanto il movimento</strong>: la ${unit} resta contata come addebitata e le date non cambiano.</p>`;
+  const choice = await choiceModal({
+    title: 'Aggiornare lo stato delle rate?',
+    body,
+    buttons: [
+      { label: 'Elimina e aggiorna le rate', value: 'update', kind: 'primary' },
+      { label: 'Elimina soltanto il movimento', value: 'keep' },
+      { label: 'Annulla', value: null, kind: 'ghost' },
+    ],
+  });
+  return choice === null ? null : { updateRates: choice === 'update' };
+}
+const delTxUrl = (id, choice) => `/api/transactions/${id}${choice.updateRates ? '?updateRates=true' : ''}`;
+const delTxToast = (choice) => (choice.updateRates ? 'Movimento eliminato · rate aggiornate' : 'Movimento eliminato');
+
 function bindTxRows(container, onChange) {
   container.querySelectorAll('.tx-edit').forEach((b) =>
     b.addEventListener('click', async () => {
@@ -2197,13 +2325,15 @@ function bindTxRows(container, onChange) {
     })
   );
   container.querySelectorAll('.tx-del').forEach((b) =>
-    b.addEventListener('click', () => {
+    b.addEventListener('click', async () => {
       const row = b.closest('.tx');
       const id = row.dataset.id;
+      const choice = await askRateUpdate(id, !!row.dataset.rule);
+      if (!choice) return;
       row.hidden = true; // hide now; actually delete after the undo window
       const timer = setTimeout(async () => {
         try {
-          await api.del(`/api/transactions/${id}`);
+          await api.del(delTxUrl(id, choice));
           try {
             onChange();
           } catch {
@@ -2214,7 +2344,7 @@ function bindTxRows(container, onChange) {
           toast(e.message, 'error');
         }
       }, 5000);
-      toast('Movimento eliminato', {
+      toast(delTxToast(choice), {
         action: {
           label: 'Annulla',
           onClick: () => {
@@ -2441,17 +2571,19 @@ async function openTxModal(tx = null, onChange) {
   askSug();
 
   form.querySelector('#tx-cancel').addEventListener('click', close);
-  form.querySelector('#tx-delete')?.addEventListener('click', () => {
+  form.querySelector('#tx-delete')?.addEventListener('click', async () => {
+    const choice = await askRateUpdate(tx.id, !!tx.recurringRuleId);
+    if (!choice) return;
     close();
     const timer = setTimeout(async () => {
       try {
-        await api.del(`/api/transactions/${tx.id}`);
+        await api.del(delTxUrl(tx.id, choice));
         onChange?.();
       } catch (e) {
         toast(e.message, 'error');
       }
     }, 5000);
-    toast('Movimento eliminato', {
+    toast(delTxToast(choice), {
       action: { label: 'Annulla', onClick: () => clearTimeout(timer) },
     });
   });

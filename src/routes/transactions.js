@@ -3,12 +3,14 @@
 const express = require('express');
 const { z } = require('zod');
 
-const { query } = require('../db/pool');
+const { query, withTransaction } = require('../db/pool');
 const { requireAuth } = require('../auth/middleware');
 const { handler, httpError, isoDate } = require('../http/validate');
 const { assertCategory, categoryPairChanged } = require('../http/category-check');
 const { buildSuggestions } = require('../transactions/suggest');
 const { filterFields, buildTxFilter } = require('../transactions/filters');
+const { rateImpact } = require('../recurring/rates');
+const { generateDue } = require('../recurring/generate');
 
 const router = express.Router();
 router.use(requireAuth);
@@ -215,16 +217,64 @@ router.patch(
   })
 );
 
+// Eliminando il movimento di una rata di una spesa fissa a durata limitata, l'interfaccia chiede se
+// aggiornare lo stato delle rate. Questa anteprima dice se la domanda ha senso e che effetto avrebbe.
+router.get(
+  '/:id/rate-impact',
+  handler(async (req, res) => {
+    const id = z.coerce.number().int().positive().parse(req.params.id);
+    const tx = await query('SELECT recurring_rule_id, occurred_on FROM transactions WHERE id = $1 AND user_id = $2', [id, req.user.id]);
+    if (tx.rowCount === 0) throw httpError(404, 'not_found', 'Movimento non trovato');
+    if (tx.rows[0].recurring_rule_id == null) return res.json({ applicable: false });
+    const rule = await query('SELECT * FROM recurring_rules WHERE id = $1 AND user_id = $2', [tx.rows[0].recurring_rule_id, req.user.id]);
+    const impact = rule.rowCount ? rateImpact(rule.rows[0], tx.rows[0].occurred_on) : null;
+    if (!impact) return res.json({ applicable: false });
+    res.json({
+      applicable: true,
+      ruleId: rule.rows[0].id,
+      ruleName: rule.rows[0].name,
+      cadence: rule.rows[0].cadence,
+      number: impact.number,
+      total: impact.total,
+      doneBefore: impact.doneBefore,
+      doneAfter: impact.doneAfter,
+      endBefore: impact.endBefore,
+      endAfter: impact.endAfter,
+      willGenerateNow: impact.willGenerateNow,
+    });
+  })
+);
+
+// DELETE /api/transactions/:id            elimina soltanto il movimento (la rata resta contata come addebitata)
+// DELETE /api/transactions/:id?updateRates=true   elimina e aggiorna le rate: il mese diventa una rata saltata
 router.delete(
   '/:id',
   handler(async (req, res) => {
     const id = z.coerce.number().int().positive().parse(req.params.id);
-    const deleted = await query('DELETE FROM transactions WHERE id = $1 AND user_id = $2', [
-      id,
-      req.user.id,
-    ]);
-    if (deleted.rowCount === 0) throw httpError(404, 'not_found', 'Movimento non trovato');
-    res.json({ ok: true });
+    const updateRates = req.query.updateRates === 'true';
+    const out = await withTransaction(async (client) => {
+      const found = await client.query(
+        'SELECT recurring_rule_id, occurred_on FROM transactions WHERE id = $1 AND user_id = $2 FOR UPDATE',
+        [id, req.user.id]
+      );
+      if (found.rowCount === 0) throw httpError(404, 'not_found', 'Movimento non trovato');
+      const tx = found.rows[0];
+      await client.query('DELETE FROM transactions WHERE id = $1 AND user_id = $2', [id, req.user.id]);
+      if (!updateRates || tx.recurring_rule_id == null) return { ratesUpdated: false };
+      const rule = await client.query('SELECT * FROM recurring_rules WHERE id = $1 AND user_id = $2 FOR UPDATE', [tx.recurring_rule_id, req.user.id]);
+      const impact = rule.rowCount ? rateImpact(rule.rows[0], tx.occurred_on) : null;
+      if (!impact) return { ratesUpdated: false };
+      // una regola già conclusa torna attiva: ha di nuovo una rata da addebitare in coda al piano
+      const reactivate = !rule.rows[0].active && impact.completed;
+      await client.query(
+        'UPDATE recurring_rules SET skipped_months = $2, active = CASE WHEN $3::boolean THEN true ELSE active END WHERE id = $1',
+        [rule.rows[0].id, impact.skippedAfter, reactivate]
+      );
+      return { ratesUpdated: true, reactivated: reactivate };
+    });
+    // la nuova ultima rata, se è già dovuta, si crea subito
+    const generated = out.ratesUpdated ? (await generateDue({ userId: req.user.id })).created : 0;
+    res.json({ ok: true, ...out, generated });
   })
 );
 
