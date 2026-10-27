@@ -21,6 +21,24 @@ const authLimiter = rateLimit({
   message: { error: 'too_many_attempts' },
 });
 
+// Limite PER ACCOUNT sui soli tentativi falliti (quelli riusciti non contano). Il limite per IP sopra non
+// basta: con TRUST_PROXY>0 e l'app raggiunta direttamente, l'intestazione X-Forwarded-For è scelta da chi
+// scrive e ogni richiesta sembra venire da un IP diverso. Chiave = identificativo normalizzato, quindi non
+// aggirabile; il prezzo è che chi sbaglia 10 volte blocca per 15 minuti anche l'utente vero.
+const accountLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: Number(process.env.LOGIN_ACCOUNT_MAX) || 10,
+  skipSuccessfulRequests: true,
+  standardHeaders: true,
+  legacyHeaders: false,
+  keyGenerator: (req) => `acct:${String(req.body?.email ?? '').trim().toLowerCase().slice(0, 254)}`,
+  message: { error: 'too_many_attempts', message: 'Troppi tentativi su questo account: riprova tra qualche minuto.' },
+});
+
+// Hash di un valore qualsiasi, per confrontare comunque quando l'utente non esiste: così il tempo di
+// risposta non distingue un identificativo inesistente da una password sbagliata.
+const DUMMY_HASH = bcrypt.hashSync('soldi-non-esiste', 12);
+
 // L'identificativo di login può essere un'email o un nome utente semplice
 // (non inviamo mai email a questo indirizzo) — il formato esatto è verificato
 // da normalizeUsername() dentro createUser(); qui solo una lunghezza sana.
@@ -86,6 +104,7 @@ router.post(
 router.post(
   '/login',
   authLimiter,
+  accountLimiter,
   handler(async (req, res) => {
     const { email, password } = loginInput.parse(req.body);
 
@@ -94,7 +113,7 @@ router.post(
       [email]
     );
     const user = found.rows[0];
-    const ok = user ? await bcrypt.compare(password, user.password_hash) : false;
+    const ok = await bcrypt.compare(password, user ? user.password_hash : DUMMY_HASH).then((m) => m && !!user);
     if (!ok) {
       throw httpError(401, 'invalid_credentials', 'Email o password non corretti');
     }

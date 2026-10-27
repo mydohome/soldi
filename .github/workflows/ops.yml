@@ -26,6 +26,10 @@ on:
       - 'package-lock.json'
       - '.github/workflows/ops.yml'
 
+# Il token del workflow serve solo a leggere il codice.
+permissions:
+  contents: read
+
 jobs:
   ops-tests:
     runs-on: ubuntu-latest

@@ -5,6 +5,10 @@ on:
     branches: [main]
   pull_request:
 
+# Il token del workflow serve solo a leggere il codice.
+permissions:
+  contents: read
+
 jobs:
   checks:
     runs-on: ubuntu-latest

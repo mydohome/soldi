@@ -31,7 +31,7 @@ RUN apk upgrade --no-cache \
 
 # Install production dependencies first for better layer caching.
 COPY package.json package-lock.json* ./
-RUN npm install --omit=dev --no-audit --no-fund
+RUN npm ci --omit=dev --no-audit --no-fund
 
 COPY src ./src
 COPY public ./public

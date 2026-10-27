@@ -5,7 +5,25 @@ const jwt = require('jsonwebtoken');
 const COOKIE_NAME = 'soldi_session';
 const TOKEN_TTL_SECONDS = 60 * 60 * 24 * 7; // 7 days
 
+// Valori di esempio pubblici (.env.example, documentazione): chi li conosce potrebbe firmare sessioni valide.
+const PLACEHOLDER_SECRET = /^(change[-_ ]?me|secret|password|insecure|dev-only)/i;
+const ALGORITHM = 'HS256';
+
+/** Da chiamare all'avvio: in produzione rifiuta un JWT_SECRET mancante, corto o di esempio. */
+function assertSecret() {
+  if (process.env.NODE_ENV !== 'production') return;
+  const s = process.env.JWT_SECRET;
+  if (!s || s.length < 16) throw new Error('JWT_SECRET deve essere impostato (almeno 16 caratteri) in produzione');
+  if (PLACEHOLDER_SECRET.test(s)) {
+    throw new Error(
+      'JWT_SECRET ha ancora il valore di esempio (pubblico): chiunque potrebbe falsificare le sessioni. ' +
+        'Generane uno nuovo con `openssl rand -hex 32`, mettilo nel .env e riavvia.'
+    );
+  }
+}
+
 function secret() {
+  assertSecret();
   const s = process.env.JWT_SECRET;
   if (!s || s.length < 16) {
     if (process.env.NODE_ENV === 'production') {
@@ -20,11 +38,12 @@ function secret() {
 function signSession(user) {
   return jwt.sign({ sub: String(user.id), email: user.email }, secret(), {
     expiresIn: TOKEN_TTL_SECONDS,
+    algorithm: ALGORITHM,
   });
 }
 
 function verifySession(token) {
-  return jwt.verify(token, secret());
+  return jwt.verify(token, secret(), { algorithms: [ALGORITHM] });
 }
 
 const cookieSecure = () =>
@@ -50,6 +69,7 @@ function clearOptions() {
 }
 
 module.exports = {
+  assertSecret,
   COOKIE_NAME,
   TOKEN_TTL_SECONDS,
   signSession,
