@@ -5,7 +5,7 @@ const { z } = require('zod');
 
 const { query, withTransaction } = require('../db/pool');
 const { requireAuth } = require('../auth/middleware');
-const { handler, httpError } = require('../http/validate');
+const { handler, httpError, patchOf } = require('../http/validate');
 const { assertCategory, categoryPairChanged } = require('../http/category-check');
 const { generateDue } = require('../recurring/generate');
 const {
@@ -239,7 +239,7 @@ router.patch(
   '/:id',
   handler(async (req, res) => {
     const id = z.coerce.number().int().positive().parse(req.params.id);
-    const patch = ruleShape.partial().parse(req.body);
+    const patch = patchOf(ruleShape).parse(req.body);
     if (Object.keys(patch).length === 0) throw httpError(400, 'empty_patch', 'Nessun campo da aggiornare');
     if ('type' in patch || 'categoryId' in patch) {
       // Come per i movimenti: si controlla solo se tipo o categoria cambiano davvero.

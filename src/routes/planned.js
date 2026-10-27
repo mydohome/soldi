@@ -5,7 +5,7 @@ const { z } = require('zod');
 
 const { query } = require('../db/pool');
 const { requireAuth } = require('../auth/middleware');
-const { handler, httpError } = require('../http/validate');
+const { handler, httpError, patchOf } = require('../http/validate');
 const { assertCategory } = require('../http/category-check');
 const { recurringHits } = require('../recurring/schedule');
 
@@ -96,7 +96,7 @@ router.patch(
   '/:id',
   handler(async (req, res) => {
     const id = z.coerce.number().int().positive().parse(req.params.id);
-    const patch = plannedShape.partial().parse(req.body);
+    const patch = patchOf(plannedShape).parse(req.body);
     if (Object.keys(patch).length === 0) throw httpError(400, 'empty_patch', 'Nessun campo da aggiornare');
     if ('categoryId' in patch) {
       const cur = await query('SELECT category_id FROM planned_expenses WHERE id = $1 AND user_id = $2', [id, req.user.id]);
