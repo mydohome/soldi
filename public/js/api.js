@@ -54,6 +54,8 @@ export const api = {
   accounts: () => request('GET', '/api/accounts'),
   recurring: () => request('GET', '/api/recurring'),
   runRecurring: () => request('POST', '/api/recurring/run'),
+  paymentsDue: (days = 7) => request('GET', `/api/payments/due?days=${days}`),
+  payments: () => request('GET', '/api/payments'),
   planned: () => request('GET', '/api/planned'),
   plannedSummary: (qs = '') => request('GET', `/api/planned/summary${qs ? `?${qs}` : ''}`),
   savings: () => request('GET', '/api/savings'),

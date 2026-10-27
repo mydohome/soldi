@@ -120,6 +120,18 @@ describe('diag — dati volutamente incoerenti', () => {
     assert.ok(!JSON.stringify(res).includes('b@test.local'), 'nessun dato personale nell’output');
   });
 
+  it('pagamenti programmati: piani e rate che puntano ai dati di un altro utente → ERRORE', async () => {
+    const { a, b, cat, acc } = await twoUsers();
+    const catB = await cat(b, 'Di B per piano'); const accB = await acc(b, 'Conto di B per piano');
+    const txB = (await h.query(`INSERT INTO transactions (user_id, type, amount_cents) VALUES ($1,'expense',100) RETURNING id`, [b.id])).rows[0].id;
+    const plan = (await h.query(`INSERT INTO payment_plans (user_id, name, category_id, account_id) VALUES ($1,'piano',$2,$3) RETURNING id`, [a.id, catB, accB])).rows[0].id;
+    await h.query(`INSERT INTO payment_installments (plan_id, user_id, due_on, amount_cents, transaction_id) VALUES ($1,$2,'2026-01-01',100,$3)`, [plan, a.id, txB]);
+    const res = await run({ dataOnly: true });
+    assert.equal(find(res, 'cross_user_refs').level, 'error');
+    assert.match(find(res, 'cross_user_refs').message, /1 piani di pagamento.*1 rate di pagamento/);
+    assert.equal(find(res, 'cross_user_refs').count, 2);
+  });
+
   it('ricorrenze: cron fermo, durata oltrepassata, movimenti in eccesso', async () => {
     const { a } = await twoUsers();
     // attiva, in ritardo di mesi

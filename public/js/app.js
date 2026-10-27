@@ -1,6 +1,7 @@
 import { api } from './api.js';
 import { donut, bars, budgetBars, spark, fmtEur, escapeHtml } from './charts.js';
 import { icons, logoMark } from './icons.js';
+import { initPayments } from './payments.js';
 
 const root = document.getElementById('app');
 const state = {
@@ -129,6 +130,8 @@ async function doLogout() {
     /* clear the client session anyway */
   }
   state.user = null;
+  state.duePrompted = false;
+  state.fisseTab = undefined;
   location.hash = '';
   renderAuth();
 }
@@ -229,6 +232,18 @@ async function renderAuth() {
   });
 }
 
+/* ------------------------------------------------------------------ pagamenti programmati */
+const payments = initPayments({
+  state, api, h, modal, toast, choiceModal, escapeHtml, fmtEur, icons, scopeBadge, catField, wireQuickCat, today, emptyState,
+  refreshView: () => renderView(),
+  // Apre Spese fisse sulla scheda indicata ('ricorrenti' | 'pagare').
+  goToFisse: (tab) => {
+    state.fisseTab = tab;
+    if (location.hash === '#/fisse') renderView();
+    else location.hash = '#/fisse';
+  },
+});
+
 /* ------------------------------------------------------------------ shell */
 const NAV = [
   { id: 'dashboard', label: 'Dashboard', short: 'Home', icon: icons.dashboard },
@@ -291,6 +306,8 @@ function renderShell() {
   shell.querySelector('#fab').addEventListener('click', () => openTxModal());
 
   renderView();
+  // Badge sul menu e, una volta per sessione, pop-up con le rate scadute.
+  payments.checkOnOpen();
 }
 
 function renderView() {
@@ -329,6 +346,7 @@ async function viewDashboard(main) {
     return;
   }
 
+  await payments.refreshDue();
   const p = state.period;
   const block = p === 'day' ? data.day : p === 'week' ? data.week : data.month;
   const trend =
@@ -379,6 +397,8 @@ async function viewDashboard(main) {
           <span class="hero-chip down">${icons.arrowDown}Uscite ${fmtEur(block.expense)}</span>
         </div>
       </div>
+
+      ${payments.dueCardHtml()}
 
       <div class="grid cols-2" style="margin-top:16px" id="kpi-grid">
         <div class="card stat income drill" data-drill="income" role="button" tabindex="0">
@@ -484,6 +504,7 @@ async function viewDashboard(main) {
       openPeriodTxModal(card.dataset.drill, () => viewDashboard(main));
     }
   });
+  payments.bindDueCard(main, () => viewDashboard(main));
   main.querySelector('#prev').addEventListener('click', () => {
     state.anchor = shiftPeriod(state.period, state.anchor, -1);
     viewDashboard(main);
@@ -857,6 +878,7 @@ async function viewCategorie(main) {
 
 /* ------------------------------------------------------------------ spese fisse */
 async function viewSpeseFisse(main) {
+  if (state.fisseTab === 'pagare') return payments.viewDaPagare(main);
   const [{ rules }, { categories }, { accounts }] = await Promise.all([
     api.recurring(),
     api.categories(),
@@ -949,7 +971,9 @@ async function viewSpeseFisse(main) {
         </div>
       </div>
 
-      <div class="grid cols-2" style="margin-bottom:6px">
+      ${payments.fisseTabsHtml('ricorrenti')}
+
+      <div class="grid cols-2" style="margin:14px 0 6px">
         <div class="card stat expense">
           <span class="label">Uscite fisse / mese</span>
           <span class="value">${fmtEur(monthlyExpense)}</span>
@@ -978,6 +1002,7 @@ async function viewSpeseFisse(main) {
   `)
   );
 
+  payments.bindFisseTabs(main);
   main.querySelector('#add-rec').addEventListener('click', () => openRecurringModal(null, () => viewSpeseFisse(main)));
   main.querySelector('#run-rec').addEventListener('click', async (e) => {
     e.currentTarget.disabled = true;
@@ -1932,7 +1957,7 @@ const GUIDE_STEPS = [
   },
   {
     title: 'Gestire le spese fisse',
-    body: `In «Spese fisse» crei regole ricorrenti (affitto, abbonamenti, stipendio…) che generano automaticamente un movimento ogni mese, o una volta l'anno, il giorno indicato. Ogni regola ha una data di inizio (se è nel passato, i movimenti arretrati si creano subito: cambiandola, i movimenti già generati si spostano con la data finale) e puoi limitarla a un numero di rate. Disattivando una regola smette di generare movimenti senza cancellare lo storico; i movimenti che genera hanno il badge «fissa». Se ne elimini uno, l'app ti chiede se aggiornare lo stato delle rate.`,
+    body: `In «Spese fisse» crei regole ricorrenti (affitto, abbonamenti, stipendio…) che generano automaticamente un movimento ogni mese, o una volta l'anno, il giorno indicato. Ogni regola ha una data di inizio (se è nel passato, i movimenti arretrati si creano subito: cambiandola, i movimenti già generati si spostano con la data finale) e puoi limitarla a un numero di rate. Disattivando una regola smette di generare movimenti senza cancellare lo storico; i movimenti che genera hanno il badge «fissa». Se ne elimini uno, l'app ti chiede se aggiornare lo stato delle rate.<br><br>Nella scheda <strong>«Da pagare»</strong> di Spese fisse registri invece i bollettini che paghi tu a mano, come le rate del condominio: crei un piano con le rate e le scadenze (puoi correggerle una per una), e quando paghi premi «Paga» per creare il movimento e vedere l'avanzamento. Se all'apertura dell'app ci sono rate scadute o in scadenza oggi compare un avviso, che sparisce quando registri il pagamento; sul menu c'è anche un badge col numero di rate da pagare.`,
     shots: [
       { src: '/img/guide/spese-fisse.png', alt: 'Elenco delle spese fisse configurate' },
       { src: '/img/guide/nuova-spesa-fissa.png', alt: 'Form per creare una nuova spesa fissa' },

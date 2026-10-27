@@ -21,6 +21,9 @@ const EXPECTED_INDEXES = [
   'idx_acc_user',
   'idx_rec_user',
   'idx_planned_user',
+  'uq_installment_tx',
+  'idx_payplan_user',
+  'idx_payinst_plan',
 ];
 const EXPECTED_CONSTRAINTS = [
   'transactions_scope_check',
@@ -32,7 +35,7 @@ const EXPECTED_CONSTRAINTS = [
   'recurring_yearly_month_check',
   'planned_yearly_month_check',
 ];
-const IDENTITY_TABLES = ['users', 'categories', 'accounts', 'recurring_rules', 'planned_expenses', 'transactions'];
+const IDENTITY_TABLES = ['users', 'categories', 'accounts', 'recurring_rules', 'planned_expenses', 'payment_plans', 'payment_installments', 'transactions'];
 const DEFAULT_JWT = /^change-me/i;
 
 async function runDiagnostics({ pool, env = process.env, dataOnly = false, now = new Date() }) {
@@ -107,6 +110,14 @@ async function runDiagnostics({ pool, env = process.env, dataOnly = false, now =
         'voci previste': await count(client, `SELECT count(*)::int AS n FROM planned_expenses p WHERE
           EXISTS (SELECT 1 FROM categories c WHERE c.id = p.category_id AND c.user_id <> p.user_id)`),
       };
+      if (tablesInDb.has('payment_plans') && tablesInDb.has('payment_installments')) {
+        cross['piani di pagamento'] = await count(client, `SELECT count(*)::int AS n FROM payment_plans p WHERE
+          EXISTS (SELECT 1 FROM categories c WHERE c.id = p.category_id AND c.user_id <> p.user_id)
+          OR EXISTS (SELECT 1 FROM accounts a WHERE a.id = p.account_id AND a.user_id <> p.user_id)`);
+        cross['rate di pagamento'] = await count(client, `SELECT count(*)::int AS n FROM payment_installments i WHERE
+          EXISTS (SELECT 1 FROM payment_plans p WHERE p.id = i.plan_id AND p.user_id <> i.user_id)
+          OR EXISTS (SELECT 1 FROM transactions t WHERE t.id = i.transaction_id AND t.user_id <> i.user_id)`);
+      }
       const total = Object.values(cross).reduce((a, b) => a + b, 0);
       if (total) {
         const detail = Object.entries(cross).filter(([, n]) => n).map(([k, n]) => `${n} ${k}`).join(', ');

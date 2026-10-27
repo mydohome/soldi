@@ -185,3 +185,35 @@ CREATE INDEX IF NOT EXISTS idx_cat_user ON categories (user_id);
 CREATE INDEX IF NOT EXISTS idx_acc_user ON accounts (user_id);
 CREATE INDEX IF NOT EXISTS idx_rec_user ON recurring_rules (user_id);
 CREATE INDEX IF NOT EXISTS idx_planned_user ON planned_expenses (user_id);
+
+-- Pagamenti programmati ("Da pagare"): bollettini a scadenza definita (rate del condominio, tasse…)
+-- che l'utente paga a mano. Una rata è PAGATA se ha un movimento collegato (transaction_id): se il
+-- movimento viene eliminato la rata torna da pagare da sola (ON DELETE SET NULL). Il numero di rata
+-- non è salvato: si ricava dall'ordine per scadenza, così modificare le date non obbliga a rinumerare.
+CREATE TABLE IF NOT EXISTS payment_plans (
+  id          BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+  user_id     BIGINT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  name        TEXT NOT NULL,
+  category_id BIGINT REFERENCES categories(id) ON DELETE SET NULL,
+  account_id  BIGINT REFERENCES accounts(id) ON DELETE SET NULL,
+  scope       TEXT NOT NULL DEFAULT 'personal' CHECK (scope IN ('personal', 'home')),
+  note        TEXT NOT NULL DEFAULT '',
+  created_at  TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+-- user_id è ridondante rispetto al piano, ma serve al backup/ripristino per singolo utente e ai controlli di proprietà.
+CREATE TABLE IF NOT EXISTS payment_installments (
+  id             BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+  plan_id        BIGINT NOT NULL REFERENCES payment_plans(id) ON DELETE CASCADE,
+  user_id        BIGINT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  due_on         DATE NOT NULL,
+  amount_cents   BIGINT NOT NULL CHECK (amount_cents > 0),
+  transaction_id BIGINT REFERENCES transactions(id) ON DELETE SET NULL,
+  created_at     TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+-- Un movimento salda al massimo una rata.
+CREATE UNIQUE INDEX IF NOT EXISTS uq_installment_tx ON payment_installments (transaction_id) WHERE transaction_id IS NOT NULL;
+CREATE INDEX IF NOT EXISTS idx_payplan_user ON payment_plans (user_id);
+CREATE INDEX IF NOT EXISTS idx_payinst_plan ON payment_installments (plan_id, due_on);
+CREATE INDEX IF NOT EXISTS idx_payinst_user_due ON payment_installments (user_id, due_on) WHERE transaction_id IS NULL;
