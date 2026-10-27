@@ -37,6 +37,17 @@ const ruleShape = z.object({
 });
 const normalizeStart = (s) => `${s.slice(0, 7)}-01`;
 
+// Una data di inizio nel passato crea subito un movimento per ogni mese trascorso: senza un limite,
+// un solo salvataggio con inizio nel 1000 ne genererebbe oltre 12.000. Il limite vale quando
+// l'inizio si imposta o si cambia, non per le regole già esistenti.
+const MAX_BACKFILL_YEARS = 10;
+function assertStartInRange(startMonth, now = new Date()) {
+  const min = `${now.getUTCFullYear() - MAX_BACKFILL_YEARS}-${String(now.getUTCMonth() + 1).padStart(2, '0')}`;
+  if (startMonth.slice(0, 7) < min) {
+    throw httpError(400, 'start_too_old', `La data di inizio non può essere precedente a ${MAX_BACKFILL_YEARS} anni fa (${min})`);
+  }
+}
+
 const yearlyNeedsMonth = (v) => v.cadence !== 'yearly' || v.month != null;
 const yearlyMonthIssue = { message: 'Per una spesa fissa annuale serve il mese', path: ['month'] };
 
@@ -109,6 +120,7 @@ router.post(
   '/',
   handler(async (req, res) => {
     const input = ruleInput.parse(req.body);
+    if (input.startMonth) assertStartInRange(input.startMonth);
     await assertCategory(req.user.id, input.categoryId ?? null, input.type);
     await assertOwned('accounts', 'account', req.user.id, input.accountId ?? null);
 
@@ -204,6 +216,7 @@ router.get(
     const cur = found.rows[0];
     const newStart = normalizeStart(startMonth);
     const changed = newStart !== monthKey(cur.start_month);
+    if (changed) assertStartInRange(startMonth);
     const plan = startShiftPlan(cur, newStart, { cadence: q.cadence, month: q.month });
     const after = shiftedRule(cur, newStart, plan.delta);
 
@@ -259,7 +272,10 @@ router.patch(
       const found = await client.query('SELECT * FROM recurring_rules WHERE id = $1 AND user_id = $2 FOR UPDATE', [id, req.user.id]);
       if (found.rowCount === 0) throw httpError(404, 'not_found', 'Spesa fissa non trovata');
       const cur = found.rows[0];
-      if (newStart && newStart !== monthKey(cur.start_month)) shifted = await shiftStart(client, cur, newStart, patch);
+      if (newStart && newStart !== monthKey(cur.start_month)) {
+        assertStartInRange(patch.startMonth);
+        shifted = await shiftStart(client, cur, newStart, patch);
+      }
       const updated = await client.query(
         `UPDATE recurring_rules
          SET name = COALESCE($3, name),

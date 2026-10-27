@@ -12,6 +12,7 @@ const { pool } = require('./db/pool');
 const { migrate } = require('./db/migrate');
 const { startBackupScheduler } = require('./backup/scheduler');
 const { startRecurringScheduler } = require('./recurring/scheduler');
+const { assertSecret } = require('./auth/tokens');
 
 const app = express();
 const PORT = Number(process.env.PORT || 3000);
@@ -105,6 +106,7 @@ app.get('*', (req, res) => {
 });
 
 async function start() {
+  assertSecret(); // in produzione rifiuta un segreto di sessione mancante o di esempio, prima di aprire la porta
   await migrate();
   startBackupScheduler();
   startRecurringScheduler();

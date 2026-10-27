@@ -33,7 +33,7 @@ Funziona da smartphone e da desktop (interfaccia responsive), gira interamente c
 
 | | |
 |---|---|
-| 👤 **Account** | Registrazione con email o nome utente + password (hash `bcrypt`), sessione via cookie firmato `httpOnly`. Rate limiting sui tentativi di login. |
+| 👤 **Account** | Registrazione con email o nome utente + password (hash `bcrypt`), sessione via cookie firmato `httpOnly`. Rate limiting sui tentativi di login, per IP e **per account** (10 errori in 15 minuti bloccano l'account per 15 minuti, a prescindere dall'IP). |
 | 💰 **Movimenti** | Entrate e uscite con importo, data, descrizione, categoria, **conto** e **ambito** (personale / casa). Ricerca testo, filtri, **annulla** dopo l'eliminazione. |
 | ✨ **Suggerimenti** | Inserendo un movimento l'app propone descrizione, categoria e conto in base allo storico (nessun servizio esterno). |
 | 🏷️ **Categorie** | Personalizzabili per colore, tipo (spesa/entrata) e **ambito (Personale/Casa)** — separate nella schermata Categorie e nei filtri dei form. 11 categorie predefinite alla registrazione. |
@@ -263,10 +263,11 @@ In NPM: **Forward Hostname** `<IP_DEL_SERVER_SOLDI>`, **Forward Port** `3010`,
 |---|---|---|
 | `HOST_PORT` | `3000` | Porta pubblicata sull'host (es. `3010` su un server). L'app nel container resta sempre sulla 3000. Ignorata con `docker-compose.npm.yml`. |
 | `BIND_ADDR` | `0.0.0.0` | Indirizzo host a cui è legata la porta. `127.0.0.1` se un reverse proxy gira sullo stesso host (l'app diventa raggiungibile solo tramite il proxy). |
-| `JWT_SECRET` | — (**obbligatorio**) | Segreto per firmare i cookie di sessione. Usa `openssl rand -hex 32`. |
+| `JWT_SECRET` | — (**obbligatorio**) | Segreto per firmare i cookie di sessione. Usa `openssl rand -hex 32`. In produzione l'app **non parte** se è mancante, corto o ha ancora il valore di esempio. |
 | `HTTPS_ENABLED` | `false` | `true` **solo** se l'app è raggiunta via HTTPS. Attiva HSTS, `upgrade-insecure-requests` e cookie `Secure`. In HTTP puro lascialo `false`, altrimenti la pagina resta bloccata su «Carico Soldi…». |
 | `COOKIE_SECURE` | `false` | Forza il flag `Secure` sul cookie di sessione a prescindere da `HTTPS_ENABLED`. Di norma tienilo uguale a `HTTPS_ENABLED`. |
-| `TRUST_PROXY` | `1` | Numero di reverse proxy davanti all'app (Express *trust proxy*). `1` = un proxy (NPM, nginx…). `0` se l'app è esposta direttamente. |
+| `TRUST_PROXY` | `1` | Numero di reverse proxy davanti all'app (Express *trust proxy*). `1` = un proxy (NPM, nginx…). **`0` se l'app è esposta direttamente** (con `1` e nessun proxy il limite per IP sui tentativi di login si aggira falsificando `X-Forwarded-For`; il limite per account vale comunque). |
+| `LOGIN_ACCOUNT_MAX` | `10` | Tentativi di login **falliti** consentiti per account ogni 15 minuti (quelli riusciti non contano). |
 | `ALLOW_REGISTRATION` | `true` | `false` = niente registrazione di nuovi utenti dalla schermata di login (resta possibile finché non esiste alcun utente, per il primo account). |
 | `TZ` | `Europe/Rome` | Fuso orario del container (influenza l'orario del backup). |
 | `PGUSER` / `PGPASSWORD` / `PGDATABASE` | `soldi` | Credenziali PostgreSQL. |
