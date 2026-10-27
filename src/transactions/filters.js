@@ -14,6 +14,8 @@ const filterFields = {
   categoryId: z.coerce.number().int().positive().optional(),
   accountId: z.coerce.number().int().positive().optional(),
   scope: z.enum(['personal', 'home']).optional(),
+  // Solo i movimenti che saldano rate di questo piano di pagamento.
+  paymentPlanId: z.coerce.number().int().positive().optional(),
   q: z.string().trim().max(100).optional(),
 };
 
@@ -37,6 +39,7 @@ function buildTxFilter(userId, q) {
   if (q.categoryId) add('t.category_id = ?', q.categoryId);
   if (q.accountId) add('t.account_id = ?', q.accountId);
   if (q.scope) add('t.scope = ?', q.scope);
+  if (q.paymentPlanId) add('EXISTS (SELECT 1 FROM payment_installments pf WHERE pf.transaction_id = t.id AND pf.plan_id = ?)', q.paymentPlanId);
   if (q.q) {
     params.push(likeContains(q.q));
     const p = `$${params.length}`;

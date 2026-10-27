@@ -1,6 +1,7 @@
 import { api } from './api.js';
 import { donut, bars, budgetBars, spark, fmtEur, escapeHtml } from './charts.js';
 import { icons, logoMark } from './icons.js';
+import { initPayments } from './payments.js';
 
 const root = document.getElementById('app');
 const state = {
@@ -129,6 +130,8 @@ async function doLogout() {
     /* clear the client session anyway */
   }
   state.user = null;
+  state.duePrompted = false;
+  state.fisseTab = undefined;
   location.hash = '';
   renderAuth();
 }
@@ -229,6 +232,22 @@ async function renderAuth() {
   });
 }
 
+/* ------------------------------------------------------------------ pagamenti programmati */
+const payments = initPayments({
+  state, api, h, modal, toast, choiceModal, escapeHtml, fmtEur, icons, scopeBadge, catField, wireQuickCat, today, emptyState,
+  txRow, bindTxRows, openTxModal,
+  refreshView: () => renderView(),
+  // Apre Spese fisse sulla scheda indicata ('ricorrenti' | 'pagare').
+  goToFisse: (tab) => {
+    state.fisseTab = tab;
+    if (location.hash === '#/fisse') renderView();
+    else location.hash = '#/fisse';
+  },
+});
+
+// Movimenti e piani cambiano le rate da segnalare: badge e scadenze si riallineano da soli.
+api.onMutate = () => payments.refreshDue();
+
 /* ------------------------------------------------------------------ shell */
 const NAV = [
   { id: 'dashboard', label: 'Dashboard', short: 'Home', icon: icons.dashboard },
@@ -291,6 +310,8 @@ function renderShell() {
   shell.querySelector('#fab').addEventListener('click', () => openTxModal());
 
   renderView();
+  // Badge sul menu e, una volta per sessione, pop-up con le rate scadute.
+  payments.checkOnOpen();
 }
 
 function renderView() {
@@ -329,6 +350,7 @@ async function viewDashboard(main) {
     return;
   }
 
+  await payments.refreshDue();
   const p = state.period;
   const block = p === 'day' ? data.day : p === 'week' ? data.week : data.month;
   const trend =
@@ -379,6 +401,8 @@ async function viewDashboard(main) {
           <span class="hero-chip down">${icons.arrowDown}Uscite ${fmtEur(block.expense)}</span>
         </div>
       </div>
+
+      ${payments.dueCardHtml()}
 
       <div class="grid cols-2" style="margin-top:16px" id="kpi-grid">
         <div class="card stat income drill" data-drill="income" role="button" tabindex="0">
@@ -484,6 +508,7 @@ async function viewDashboard(main) {
       openPeriodTxModal(card.dataset.drill, () => viewDashboard(main));
     }
   });
+  payments.bindDueCard(main, () => viewDashboard(main));
   main.querySelector('#prev').addEventListener('click', () => {
     state.anchor = shiftPeriod(state.period, state.anchor, -1);
     viewDashboard(main);
@@ -857,6 +882,7 @@ async function viewCategorie(main) {
 
 /* ------------------------------------------------------------------ spese fisse */
 async function viewSpeseFisse(main) {
+  if (state.fisseTab === 'pagare') return payments.viewDaPagare(main);
   const [{ rules }, { categories }, { accounts }] = await Promise.all([
     api.recurring(),
     api.categories(),
@@ -949,7 +975,9 @@ async function viewSpeseFisse(main) {
         </div>
       </div>
 
-      <div class="grid cols-2" style="margin-bottom:6px">
+      ${payments.fisseTabsHtml('ricorrenti')}
+
+      <div class="grid cols-2" style="margin:14px 0 6px">
         <div class="card stat expense">
           <span class="label">Uscite fisse / mese</span>
           <span class="value">${fmtEur(monthlyExpense)}</span>
@@ -978,6 +1006,7 @@ async function viewSpeseFisse(main) {
   `)
   );
 
+  payments.bindFisseTabs(main);
   main.querySelector('#add-rec').addEventListener('click', () => openRecurringModal(null, () => viewSpeseFisse(main)));
   main.querySelector('#run-rec').addEventListener('click', async (e) => {
     e.currentTarget.disabled = true;
@@ -1932,7 +1961,7 @@ const GUIDE_STEPS = [
   },
   {
     title: 'Gestire le spese fisse',
-    body: `In «Spese fisse» crei regole ricorrenti (affitto, abbonamenti, stipendio…) che generano automaticamente un movimento ogni mese, o una volta l'anno, il giorno indicato. Ogni regola ha una data di inizio (se è nel passato, i movimenti arretrati si creano subito: cambiandola, i movimenti già generati si spostano con la data finale) e puoi limitarla a un numero di rate. Disattivando una regola smette di generare movimenti senza cancellare lo storico; i movimenti che genera hanno il badge «fissa». Se ne elimini uno, l'app ti chiede se aggiornare lo stato delle rate.`,
+    body: `In «Spese fisse» crei regole ricorrenti (affitto, abbonamenti, stipendio…) che generano automaticamente un movimento ogni mese, o una volta l'anno, il giorno indicato. Ogni regola ha una data di inizio (se è nel passato, i movimenti arretrati si creano subito: cambiandola, i movimenti già generati si spostano con la data finale) e puoi limitarla a un numero di rate. Disattivando una regola smette di generare movimenti senza cancellare lo storico; i movimenti che genera hanno il badge «fissa». Se ne elimini uno, l'app ti chiede se aggiornare lo stato delle rate.<br><br>Nella scheda <strong>«Da pagare»</strong> di Spese fisse registri invece i bollettini che paghi tu a mano, come le rate del condominio: crei un piano con le rate e le scadenze (puoi correggerle una per una), e quando paghi premi «Paga» per creare il movimento e vedere l'avanzamento. Puoi anche registrare un movimento normale e scegliere il «Piano di pagamento» (e la rata) nel modulo: la descrizione si compila da sola, ad esempio «Lavori extra 2026 3 di 14». Toccando un piano vedi tutti i movimenti collegati, che puoi modificare o eliminare: il piano si aggiorna di conseguenza. Se all'apertura dell'app ci sono rate scadute o in scadenza oggi compare un avviso, che sparisce quando registri il pagamento; sul menu c'è anche un badge col numero di rate da pagare.`,
     shots: [
       { src: '/img/guide/spese-fisse.png', alt: 'Elenco delle spese fisse configurate' },
       { src: '/img/guide/nuova-spesa-fissa.png', alt: 'Form per creare una nuova spesa fissa' },
@@ -2238,6 +2267,10 @@ function txRow(t) {
       <div class="meta">
         <div class="name">${escapeHtml(t.note || t.categoryName || (t.type === 'income' ? 'Entrata' : 'Spesa'))} ${scopeBadge(t.scope)}${
           t.recurringRuleId ? `<span class="scope-badge fissa">${icons.repeat}fissa</span>` : ''
+        }${
+          t.paymentPlanId
+            ? `<span class="scope-badge rata" title="${escapeHtml(t.paymentPlanName)}">${icons.check}rata ${t.paymentNumber}/${t.paymentTotal}</span>`
+            : ''
         }</div>
         <div class="cat">${sub}</div>
       </div>
@@ -2385,6 +2418,15 @@ async function openTxModal(tx = null, onChange) {
   const accounts = state._accounts || (await api.accounts()).accounts;
   state._accounts = accounts;
   const editing = !!tx;
+  // Piani di pagamento con rate ancora da saldare (più quella già saldata da questo movimento).
+  let plans = [];
+  try {
+    plans = (await api.payments()).plans.filter((p) =>
+      p.installments.some((i) => !i.paid || (tx && i.id === tx.paymentInstallmentId))
+    );
+  } catch {
+    /* il collegamento al piano è un extra: senza, il movimento si registra come sempre */
+  }
   const t = tx || {
     type: 'expense',
     amount: '',
@@ -2453,6 +2495,17 @@ async function openTxModal(tx = null, onChange) {
             .join('')}
         </select>
       </div>
+      <div class="field" id="plan-field" ${plans.length && t.type === 'expense' ? '' : 'hidden'}>
+        <label for="planId">Piano di pagamento</label>
+        <select id="planId">
+          <option value="">Nessuno</option>
+          ${plans
+            .map((p) => `<option value="${p.id}" ${String(p.id) === String(t.paymentPlanId) ? 'selected' : ''}>${escapeHtml(p.name)}</option>`)
+            .join('')}
+        </select>
+        <select id="instId" style="margin-top:8px" aria-label="Rata del piano" hidden></select>
+        <span class="muted" id="plan-hint" style="font-size:.82rem"></span>
+      </div>
       <span class="error" id="tx-err"></span>
       <div class="modal-actions">
         ${editing ? '<button type="button" class="btn danger" id="tx-delete">Elimina</button>' : ''}
@@ -2481,6 +2534,7 @@ async function openTxModal(tx = null, onChange) {
     form.querySelector('.switch-label.expense').classList.toggle('on', type === 'expense');
     form.querySelector('.switch-label.income').classList.toggle('on', type === 'income');
     fillCats(catSelect.value || t.categoryId);
+    planField.hidden = !plans.length || type !== 'expense';
     askSug();
   };
   typeSwitch.addEventListener('change', syncType);
@@ -2494,6 +2548,72 @@ async function openTxModal(tx = null, onChange) {
     askSug();
   };
   scopeInput.addEventListener('change', syncScope);
+
+  // --- collegamento a un piano di pagamento: descrizione «<piano> <n> di <totale>» in automatico ---
+  const planField = form.querySelector('#plan-field');
+  const planSel = form.querySelector('#planId');
+  const instSel = form.querySelector('#instId');
+  const planHint = form.querySelector('#plan-hint');
+  const amountInput = form.querySelector('#amount');
+  const dmyDate = (s) => `${s.slice(8, 10)}/${s.slice(5, 7)}/${s.slice(0, 4)}`;
+  const planById = (id) => plans.find((p) => String(p.id) === String(id));
+  const instById = (plan, id) => plan?.installments.find((i) => String(i.id) === String(id));
+  const autoNote = (plan, inst) => `${plan.name} ${inst.number} di ${inst.total}`;
+  let lastAutoNote = '';
+  let lastAutoAmount = '';
+  if (editing && tx.paymentPlanId) lastAutoNote = `${tx.paymentPlanName} ${tx.paymentNumber} di ${tx.paymentTotal}`;
+
+  function fillInst(plan, selectedId) {
+    const avail = plan.installments.filter((i) => !i.paid || i.id === t.paymentInstallmentId);
+    const pick = avail.find((i) => String(i.id) === String(selectedId)) || avail.find((i) => !i.paid) || avail[0];
+    instSel.innerHTML = avail
+      .map(
+        (i) =>
+          `<option value="${i.id}" ${i === pick ? 'selected' : ''}>Rata ${i.number} di ${i.total} · scad. ${dmyDate(i.dueOn)} · ${fmtEur(i.paid ? i.paidAmount : i.amount)}${i.paid ? ' (questo movimento)' : ''}</option>`
+      )
+      .join('');
+    instSel.hidden = false;
+  }
+  // `fromUser`: la scelta arriva dall'utente → si precompilano anche importo, categoria, conto e ambito
+  // (solo su un movimento nuovo: uno esistente conserva i propri valori).
+  function applyInst(fromUser) {
+    const plan = planById(planSel.value);
+    const inst = instById(plan, instSel.value);
+    if (!plan || !inst) return;
+    const text = autoNote(plan, inst);
+    if (noteInput.value.trim() === '' || noteInput.value === lastAutoNote) noteInput.value = text;
+    lastAutoNote = text;
+    planHint.textContent = `Salda la rata ${inst.number} di ${inst.total} del piano: l'avanzamento si aggiorna da solo.`;
+    if (!fromUser || editing) return;
+    const amt = inst.paid ? inst.paidAmount : inst.amount;
+    if (amountInput.value === '' || String(amountInput.value) === String(lastAutoAmount)) amountInput.value = amt;
+    lastAutoAmount = amt;
+    if ((plan.scope === 'home') !== scopeInput.checked) {
+      scopeInput.checked = plan.scope === 'home';
+      syncScope();
+    }
+    if (plan.categoryId && [...catSelect.options].some((o) => o.value === String(plan.categoryId))) {
+      catSelect.value = String(plan.categoryId);
+      catTouched = true;
+    }
+    if (plan.accountId && [...accSelect.options].some((o) => o.value === String(plan.accountId))) {
+      accSelect.value = String(plan.accountId);
+      accTouched = true;
+    }
+    paintSug();
+  }
+  function onPlanChange() {
+    const plan = planById(planSel.value);
+    if (!plan) {
+      instSel.hidden = true;
+      planHint.textContent = '';
+      if (lastAutoNote && noteInput.value === lastAutoNote) noteInput.value = '';
+      lastAutoNote = '';
+      return;
+    }
+    fillInst(plan, null);
+    applyInst(true);
+  }
 
   // --- suggerimenti da storico personale: descrizione, categoria, conto ---
   const accSelect = form.querySelector('#accountId');
@@ -2570,6 +2690,13 @@ async function openTxModal(tx = null, onChange) {
   noteInput.addEventListener('input', askSug);
   askSug();
 
+  planSel.addEventListener('change', onPlanChange);
+  instSel.addEventListener('change', () => applyInst(true));
+  if (planSel.value) {
+    fillInst(planById(planSel.value), t.paymentInstallmentId);
+    applyInst(false);
+  }
+
   form.querySelector('#tx-cancel').addEventListener('click', close);
   form.querySelector('#tx-delete')?.addEventListener('click', async () => {
     const choice = await askRateUpdate(tx.id, !!tx.recurringRuleId);
@@ -2600,6 +2727,8 @@ async function openTxModal(tx = null, onChange) {
       note: fd.note || '',
       occurredOn: fd.occurredOn,
     };
+    if (type === 'expense' && planSel.value && instSel.value) body.installmentId = Number(instSel.value);
+    else if (editing) body.installmentId = null; // scollega dal piano
     const btn = form.querySelector('button[type=submit]');
     btn.disabled = true;
     try {

@@ -23,6 +23,8 @@ const txInput = z.object({
   scope: z.enum(['personal', 'home']).default('personal'),
   note: z.string().trim().max(280).default(''),
   occurredOn: isoDate.optional(),
+  // Rata di un piano di pagamento («Da pagare») che questo movimento salda; null = nessuna.
+  installmentId: z.coerce.number().int().positive().nullable().optional(),
 });
 
 const toCents = (euros) => Math.round(euros * 100);
@@ -31,10 +33,18 @@ const toEuros = (cents) => Number(cents) / 100;
 const SELECT_TX = `
   SELECT t.*,
          c.name AS category_name, c.color AS category_color,
-         a.name AS account_name,  a.color AS account_color
+         a.name AS account_name,  a.color AS account_color,
+         pi.id AS installment_id, pi.plan_id AS payment_plan_id, pp.name AS payment_plan_name,
+         CASE WHEN pi.id IS NULL THEN NULL ELSE
+           (SELECT COUNT(*)::int FROM payment_installments q
+             WHERE q.plan_id = pi.plan_id AND (q.due_on, q.id) <= (pi.due_on, pi.id)) END AS payment_number,
+         CASE WHEN pi.id IS NULL THEN NULL ELSE
+           (SELECT COUNT(*)::int FROM payment_installments q WHERE q.plan_id = pi.plan_id) END AS payment_total
   FROM transactions t
   LEFT JOIN categories c ON c.id = t.category_id
-  LEFT JOIN accounts   a ON a.id = t.account_id`;
+  LEFT JOIN accounts   a ON a.id = t.account_id
+  LEFT JOIN payment_installments pi ON pi.transaction_id = t.id
+  LEFT JOIN payment_plans pp ON pp.id = pi.plan_id`;
 
 function shape(row) {
   return {
@@ -48,6 +58,12 @@ function shape(row) {
     accountName: row.account_name,
     accountColor: row.account_color,
     recurringRuleId: row.recurring_rule_id,
+    // Rata di un piano di pagamento saldata da questo movimento (null se non collegato).
+    paymentInstallmentId: row.installment_id ?? null,
+    paymentPlanId: row.payment_plan_id ?? null,
+    paymentPlanName: row.payment_plan_name ?? null,
+    paymentNumber: row.payment_number ?? null,
+    paymentTotal: row.payment_total ?? null,
     scope: row.scope,
     note: row.note,
     occurredOn:
@@ -59,6 +75,16 @@ async function assertOwned(table, label, userId, id) {
   if (id == null) return;
   const found = await query(`SELECT 1 FROM ${table} WHERE id = $1 AND user_id = $2`, [id, userId]);
   if (found.rowCount === 0) throw httpError(400, `bad_${label}`, `${label === 'category' ? 'Categoria' : 'Conto'} non valido`);
+}
+
+/** Collega il movimento alla rata (dell'utente, non già saldata da un altro movimento). */
+async function linkInstallment(client, userId, txId, installmentId) {
+  const r = await client.query('SELECT transaction_id FROM payment_installments WHERE id = $1 AND user_id = $2 FOR UPDATE', [installmentId, userId]);
+  if (r.rowCount === 0) throw httpError(400, 'bad_installment', 'Rata non valida');
+  if (r.rows[0].transaction_id != null && String(r.rows[0].transaction_id) !== String(txId)) {
+    throw httpError(409, 'installment_paid', 'La rata risulta già saldata da un altro movimento');
+  }
+  await client.query('UPDATE payment_installments SET transaction_id = $1 WHERE id = $2', [txId, installmentId]);
 }
 
 const listQuery = z.object({
@@ -144,24 +170,32 @@ router.post(
     const input = txInput.parse(req.body);
     await assertCategory(req.user.id, input.categoryId ?? null, input.type);
     await assertOwned('accounts', 'account', req.user.id, input.accountId ?? null);
+    if (input.installmentId != null && input.type !== 'expense') {
+      throw httpError(400, 'installment_needs_expense', 'Solo una spesa può saldare la rata di un piano di pagamento');
+    }
 
-    const inserted = await query(
-      `INSERT INTO transactions
-         (user_id, type, amount_cents, category_id, account_id, scope, note, occurred_on)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, COALESCE($8, CURRENT_DATE))
-       RETURNING id`,
-      [
-        req.user.id,
-        input.type,
-        toCents(input.amount),
-        input.categoryId ?? null,
-        input.accountId ?? null,
-        input.scope,
-        input.note,
-        input.occurredOn ?? null,
-      ]
-    );
-    const row = await query(`${SELECT_TX} WHERE t.id = $1`, [inserted.rows[0].id]);
+    const id = await withTransaction(async (client) => {
+      const inserted = await client.query(
+        `INSERT INTO transactions
+           (user_id, type, amount_cents, category_id, account_id, scope, note, occurred_on)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, COALESCE($8, CURRENT_DATE))
+         RETURNING id`,
+        [
+          req.user.id,
+          input.type,
+          toCents(input.amount),
+          input.categoryId ?? null,
+          input.accountId ?? null,
+          input.scope,
+          input.note,
+          input.occurredOn ?? null,
+        ]
+      );
+      const txId = inserted.rows[0].id;
+      if (input.installmentId != null) await linkInstallment(client, req.user.id, txId, input.installmentId);
+      return txId;
+    });
+    const row = await query(`${SELECT_TX} WHERE t.id = $1`, [id]);
     res.status(201).json({ transaction: shape(row.rows[0]) });
   })
 );
@@ -185,7 +219,8 @@ router.patch(
     }
     if ('accountId' in patch) await assertOwned('accounts', 'account', req.user.id, patch.accountId ?? null);
 
-    const updated = await query(
+    const updated = await withTransaction(async (client) => {
+      const upd = await client.query(
       `UPDATE transactions
        SET type = COALESCE($3, type),
            amount_cents = COALESCE($4, amount_cents),
@@ -209,8 +244,27 @@ router.patch(
         patch.note ?? null,
         patch.occurredOn ?? null,
       ]
-    );
-    if (updated.rowCount === 0) throw httpError(404, 'not_found', 'Movimento non trovato');
+      );
+      if (upd.rowCount === 0) throw httpError(404, 'not_found', 'Movimento non trovato');
+      // Collegamento a una rata: null scollega (il movimento resta, la rata torna da pagare); un id
+      // collega, spostando il movimento dalla rata precedente. Importo e data si aggiornano da soli
+      // nel piano, che li legge dal movimento.
+      if ('installmentId' in patch) {
+        await client.query('UPDATE payment_installments SET transaction_id = NULL WHERE transaction_id = $1 AND user_id = $2', [id, req.user.id]);
+        if (patch.installmentId != null) await linkInstallment(client, req.user.id, id, patch.installmentId);
+      }
+      if ('installmentId' in patch || 'type' in patch) {
+        const chk = await client.query(
+          `SELECT 1 FROM transactions t JOIN payment_installments i ON i.transaction_id = t.id
+           WHERE t.id = $1 AND t.type <> 'expense'`,
+          [id]
+        );
+        if (chk.rowCount) {
+          throw httpError(400, 'linked_needs_expense', 'Un movimento collegato a una rata deve essere una spesa: scollegalo dal piano per renderlo un’entrata');
+        }
+      }
+      return upd;
+    });
 
     const row = await query(`${SELECT_TX} WHERE t.id = $1`, [id]);
     res.json({ transaction: shape(row.rows[0]) });

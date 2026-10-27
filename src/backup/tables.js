@@ -55,6 +55,10 @@ module.exports = [
     ],
   },
   {
+    name: 'payment_plans',
+    columns: ['id', 'user_id', 'name', 'category_id', 'account_id', 'scope', 'note', 'created_at'],
+  },
+  {
     name: 'transactions',
     columns: [
       'id',
@@ -69,6 +73,11 @@ module.exports = [
       'occurred_on',
       'created_at',
     ],
+  },
+  {
+    // Dopo transactions e payment_plans: le rate puntano a entrambi.
+    name: 'payment_installments',
+    columns: ['id', 'plan_id', 'user_id', 'due_on', 'amount_cents', 'transaction_id', 'created_at'],
   },
   {
     name: 'savings_settings',

@@ -51,6 +51,7 @@ Funziona da smartphone e da desktop (interfaccia responsive), gira interamente c
 | 🛡️ **Gestione operativa** | Strumenti in `ops/` (comando `soldi`): backup giornaliero con dump verificato, copia fuori macchina cifrata (restic), prova di ripristino automatica, aggiornamento con rollback, sorveglianza con avvisi Telegram. Vedi **[docs/OPERATIONS.md](docs/OPERATIONS.md)**. |
 | ♻️ **Ripristino** | Comando singolo che ricarica i dati da un backup CSV. |
 | 🎨 **UI** | Design moderno, tema chiaro/scuro automatico, elementi grafici originali. |
+| 🧾 **Pagamenti programmati** | Scheda **«Da pagare»** in Spese fisse: bollettini a scadenza definita pagati a mano (es. 14 rate del condominio). Crei il piano con le rate (importo per rata o totale da dividere, cadenza mensile o altra, ogni rata correggibile) e premi **«Paga»**: si crea il movimento e avanza la barra. All'apertura dell'app un **pop-up** segnala le rate scadute o in scadenza oggi e sparisce quando registri il pagamento; badge sul menu e card in Dashboard. |
 | 📖 **Guida in-app** | In **Impostazioni → Guida**: come aggiungere movimenti e gestire categorie, conti e spese fisse, con screenshot delle schermate. |
 
 ---
@@ -324,6 +325,31 @@ In NPM: **Forward Hostname** `<IP_DEL_SERVER_SOLDI>`, **Forward Port** `3010`,
   delle rate**: «Elimina e aggiorna le rate» fa risultare la rata non addebitata (il mese diventa una
   rata saltata) e sposta l'ultima rata di un mese; «Elimina soltanto il movimento» lascia la rata contata
   come addebitata. Per le regole a tempo indeterminato si elimina senza domande.
+- **Spese fisse → Da pagare** — pagamenti programmati: bollettini a scadenza definita che paghi tu a
+  mano, senza addebito automatico (ad esempio le 14 rate dei lavori straordinari del condominio).
+  **Nuovo piano**: nome, categoria, conto, ambito e rate, calcolate dal **totale da dividere** (il resto
+  dei centesimi va sull'ultima rata) o da un importo per rata, con cadenza mensile, bimestrale, … ; poi
+  si corregge data e importo di ogni rata e se ne possono aggiungere o togliere. **«Paga»** apre il
+  modulo del pagamento (data, importo, conto, nota già compilati) e crea il movimento di spesa collegato:
+  la barra mostra rate pagate, residuo e versato. **Eliminare quel movimento** (o «Annulla pagamento»)
+  riporta la rata da pagare: lo stato si ricava dal collegamento, non è salvato a parte.
+  **Collegare un movimento a un piano**: nel modulo di un movimento (spesa) il campo «Piano di pagamento»
+  propone i piani con rate da saldare e la rata (di default la prossima); la descrizione si compila da
+  sola («Lavori extra 2026 3 di 14»), insieme a importo, categoria, conto e ambito del piano. Vale anche
+  per un movimento già esistente (collegarlo, spostarlo su un'altra rata o scollegarlo: il movimento
+  resta, la rata torna da pagare). Toccando il nome del piano (o «Movimenti collegati») si vedono tutti
+  i suoi movimenti, modificabili ed eliminabili da lì: avanzamento, versato e residuo si aggiornano da
+  soli perché leggono importo e data dal movimento. Nell'elenco movimenti le rate hanno il badge «rata n/N».
+  **Modificare il piano**: la matita del piano apre tutte le rate in una tabella (una casella per rata): si
+  cambiano data e importo di ognuna, se ne aggiungono o tolgono, e il **totale si ricalcola** subito. Le
+  rate già pagate sono bloccate (si modificano dal movimento collegato).
+  **Rate uguali**: dal piano, «Rate uguali» imposta lo stesso importo a tutte le rate ancora da pagare, oppure
+  divide un totale tra di esse (resto dei centesimi sull'ultima); le rate già pagate non cambiano. Ogni
+  singola rata non pagata si corregge con la matita (data e importo).
+  **Avvisi**: all'apertura dell'app un pop-up elenca le rate scadute o in scadenza oggi, con «Paga» per
+  ognuna; «Più tardi» lo chiude fino alla prossima apertura e sparisce da solo quando registri tutti i
+  pagamenti. Sul menu c'è un badge col numero di rate da segnalare e in Dashboard una card con le
+  prossime scadenze (7 giorni). L'avviso compare solo con l'app aperta: non c'è nessuna notifica push.
 - **Movimenti → Esporta** — scarica i movimenti con i filtri della vista (senza periodo: tutti, fino
   a 50.000). **Excel**: foglio «Movimenti» (Data, Tipo, Importo, Categoria, Conto, Ambito, Nota, Netto,
   Spesa fissa; date e importi veri, intestazione bloccata, filtro automatico) e foglio «Info» con
@@ -504,7 +530,9 @@ Ogni settimana (default: **domenica alle 03:00**, fuso `TZ`) l'app scrive un bac
 ├── accounts.csv
 ├── recurring_rules.csv
 ├── planned_expenses.csv
+├── payment_plans.csv
 ├── transactions.csv
+├── payment_installments.csv
 ├── savings_settings.csv
 ├── telegram_settings.csv
 └── manifest.json
@@ -723,6 +751,10 @@ Tutte sotto `/api`, JSON, autenticazione via cookie di sessione.
 | `GET`/`POST`/`PATCH`/`DELETE` | `/api/accounts` | Gestione conti |
 | `GET`/`POST`/`PATCH`/`DELETE` | `/api/recurring` | Gestione spese fisse (`cadence`: monthly\|yearly + `month`; `totalOccurrences` per la durata limitata, con `progress` = avanzamento a calendario, residuo e versato; `startMonth` (AAAA-MM) per l'inizio, `GET /api/recurring/:id/start-preview` per l'anteprima dello spostamento; `DELETE ?keepMovimenti=true` tiene i movimenti già generati) |
 | `POST` | `/api/recurring/run` | Genera subito i movimenti fissi dovuti |
+| `GET`/`POST`/`PATCH`/`DELETE` | `/api/payments` | Pagamenti programmati («Da pagare»): piani con le loro rate, ciascuna con `number`/`total`, `status` (paid\|overdue\|today\|upcoming) e `progress` del piano. `POST /generate` calcola le rate (anteprima), `PATCH /:id` accetta anche `installments` (l'elenco completo delle rate non pagate: con `id` aggiorna, senza `id` aggiunge, le non nominate si eliminano), `PATCH`/`DELETE /installments/:id` modificano o tolgono una rata non pagata, `POST /:id/installments` ne aggiunge una, `POST /:id/equalize` rende uguali quelle da pagare (`mode`: each\|total) |
+| `GET`  | `/api/transactions?paymentPlanId=` | Solo i movimenti che saldano rate del piano; ogni movimento ha `paymentInstallmentId`, `paymentPlanId`, `paymentPlanName`, `paymentNumber`, `paymentTotal`. `POST`/`PATCH /api/transactions` accettano `installmentId` (null = scollega) |
+| `POST` | `/api/payments/installments/:id/pay` | Salda una rata: crea il movimento di spesa e lo collega (`occurredOn`, `amount`, `accountId`, `note` opzionali). Eliminando quel movimento la rata torna da pagare |
+| `GET`  | `/api/payments/due?days=7` | Rate da segnalare (`alert`: scadute o in scadenza oggi) e in arrivo nei prossimi giorni, con i conteggi; alimenta pop-up, badge e card |
 | `GET`/`POST`/`PATCH`/`DELETE` | `/api/planned` | Gestione voci di budget (spese previste) |
 | `GET`  | `/api/planned/summary?year=YYYY&includeRecurring=true\|false&scope=` | Previsione annuale: totali, proiezione, budget mensile necessario, risparmio potenziale, per mese/categoria/ambito |
 | `GET`  | `/api/savings` | Piano di risparmio: entrate/uscite previste, margine, % consigliate per fondo sicurezza e fondo risparmio |

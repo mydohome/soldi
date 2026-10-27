@@ -11,6 +11,8 @@ const { BACKUP_ROOT, USER_SCOPED_TABLES, userBackupPrefix, byTimestamp } = requi
 // lasciare per un istante movimenti che puntano a categorie/conti già
 // cancellati nella stessa transazione.
 const DELETE_ORDER = [
+  'payment_installments',
+  'payment_plans',
   'transactions',
   'planned_expenses',
   'recurring_rules',
@@ -140,9 +142,17 @@ async function restoreUserBackup({ userId, dir, force = false }) {
       userId,
       fkMaps: { category_id: categoryIds },
     });
-    await insertUserRows(client, 'transactions', parsed.transactions, {
+    const paymentPlanIds = await insertUserRows(client, 'payment_plans', parsed.payment_plans, {
+      userId,
+      fkMaps: { category_id: categoryIds, account_id: accountIds },
+    });
+    const transactionIds = await insertUserRows(client, 'transactions', parsed.transactions, {
       userId,
       fkMaps: { category_id: categoryIds, account_id: accountIds, recurring_rule_id: recurringIds },
+    });
+    await insertUserRows(client, 'payment_installments', parsed.payment_installments, {
+      userId,
+      fkMaps: { plan_id: paymentPlanIds, transaction_id: transactionIds },
     });
     await insertUserRows(client, 'savings_settings', parsed.savings_settings, { userId });
     await insertUserRows(client, 'telegram_settings', parsed.telegram_settings, { userId });
