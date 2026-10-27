@@ -7,16 +7,28 @@ WORKDIR /app
 # Sicurezza dell'immagine base (la scansione Trivy segnalava vulnerabilità HIGH/CRITICAL):
 #  - Node 24 (LTS): Node 20 è a fine vita dalla primavera 2026 e non riceve più patch di sicurezza;
 #  - apk upgrade: porta i pacchetti di Alpine alle versioni corrette già pubblicate;
-#  - npm 12 al posto di quello incluso nella base, che porta con sé dipendenze (tar, undici,
-#    brace-expansion) con vulnerabilità note. npm 12 richiede Node ≥ 22, quindi non era possibile
-#    su Node 20. L'app non usa npm a runtime, ma i comandi di gestione (`npm run backup`,
-#    `npm run diag`…) e l'aggiornamento in-app (`npm ci`) sì.
+#  - npm 12 al posto di quello incluso nella base, che porta con sé dipendenze (tar, brace-expansion…)
+#    con vulnerabilità note. npm 12 richiede Node ≥ 22, quindi non era possibile su Node 20;
+#  - npm 12 incorpora ancora undici 6.29.0 (HIGH): si sostituisce con la patch già pubblicata della
+#    stessa serie e la build fallisce se la sostituzione non è riuscita. Da togliere quando una
+#    versione di npm incorpora undici >= 6.29.1.
+#    L'app non usa queste librerie a runtime; i comandi di gestione (`npm run backup`,
+#    `npm run diag`…) e l'aggiornamento in-app (`npm ci`) richiedono però npm.
 # git: usato per l'aggiornamento in-app (Impostazioni → Aggiorna) quando il repo
 # è montato su /repo. Innocuo quando non usato.
 RUN apk upgrade --no-cache \
  && apk add --no-cache git \
  && npm install -g npm@12 \
- && npm --version \
+ && cd /usr/local/lib/node_modules/npm/node_modules \
+ && for spec in undici@6.29.1; do \
+      name="${spec%@*}"; want="${spec#*@}"; tmp="$(mktemp -d)"; \
+      (cd "$tmp" && npm pack "$spec" --silent >/dev/null) || exit 1; \
+      rm -rf "$name"; mkdir "$name"; \
+      tar -xzf "$tmp"/*.tgz -C "$name" --strip-components=1 || exit 1; \
+      rm -rf "$tmp"; \
+      [ "$(node -p "require('./$name/package.json').version")" = "$want" ] || exit 1; \
+    done \
+ && cd / && npm --version \
  && npm cache clean --force
 
 # Install production dependencies first for better layer caching.
