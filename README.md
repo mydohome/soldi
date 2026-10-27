@@ -774,7 +774,7 @@ Tutte sotto `/api`, JSON, autenticazione via cookie di sessione.
 
 ## Sviluppo locale
 
-Serve Node.js 20+ e un PostgreSQL in ascolto.
+Serve Node.js 22+ (l'immagine Docker usa Node 24 LTS) e un PostgreSQL in ascolto.
 
 ```bash
 npm install

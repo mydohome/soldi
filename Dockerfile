@@ -1,24 +1,26 @@
 # syntax=docker/dockerfile:1
-FROM node:20-alpine
+FROM node:24-alpine
 
 ENV NODE_ENV=production
 WORKDIR /app
 
 # Sicurezza dell'immagine base (la scansione Trivy segnalava vulnerabilità HIGH/CRITICAL):
+#  - Node 24 (LTS): Node 20 è a fine vita dalla primavera 2026 e non riceve più patch di sicurezza;
 #  - apk upgrade: porta i pacchetti di Alpine alle versioni corrette già pubblicate;
-#  - npm 11 (supporta Node 20) al posto di quello della base, che porta con sé un `tar`
-#    vulnerabile; npm 12 richiede Node ≥ 22, quindi non è un'opzione su questa base;
-#  - npm 11 incorpora ancora brace-expansion 5.0.9 e undici 6.28.0 (HIGH, poi anche 6.29.0): si sostituiscono
-#    con le patch già pubblicate (stesse dipendenze) e la build fallisce se la sostituzione
-#    non è riuscita. L'app non usa queste librerie a runtime; i comandi di gestione
-#    (`npm run backup`, `npm run diag`…) richiedono però npm.
+#  - npm 12 al posto di quello incluso nella base, che porta con sé dipendenze (tar, brace-expansion…)
+#    con vulnerabilità note. npm 12 richiede Node ≥ 22, quindi non era possibile su Node 20;
+#  - npm 12 incorpora ancora undici 6.29.0 (HIGH): si sostituisce con la patch già pubblicata della
+#    stessa serie e la build fallisce se la sostituzione non è riuscita. Da togliere quando una
+#    versione di npm incorpora undici >= 6.29.1.
+#    L'app non usa queste librerie a runtime; i comandi di gestione (`npm run backup`,
+#    `npm run diag`…) e l'aggiornamento in-app (`npm ci`) richiedono però npm.
 # git: usato per l'aggiornamento in-app (Impostazioni → Aggiorna) quando il repo
 # è montato su /repo. Innocuo quando non usato.
 RUN apk upgrade --no-cache \
  && apk add --no-cache git \
- && npm install -g npm@11 \
+ && npm install -g npm@12 \
  && cd /usr/local/lib/node_modules/npm/node_modules \
- && for spec in brace-expansion@5.0.12 undici@6.29.1; do \
+ && for spec in undici@6.29.1; do \
       name="${spec%@*}"; want="${spec#*@}"; tmp="$(mktemp -d)"; \
       (cd "$tmp" && npm pack "$spec" --silent >/dev/null) || exit 1; \
       rm -rf "$name"; mkdir "$name"; \
