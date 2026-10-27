@@ -51,4 +51,17 @@ function httpError(status, code, message) {
   return err;
 }
 
-module.exports = { handler, httpError, isoDate };
+/**
+ * Schema per un PATCH: ogni campo diventa facoltativo e, se assente nel corpo, resta assente.
+ * Con zod 4 un `.default()` dentro `.partial()` riempirebbe comunque i campi mancanti (es. ambito
+ * «personal», attiva «true»), sovrascrivendo dati salvati: per questo si tolgono prima i default.
+ */
+function patchOf(schema) {
+  const shape = {};
+  for (const [key, field] of Object.entries(schema.shape)) {
+    shape[key] = (field instanceof z.ZodDefault ? field.unwrap() : field).optional();
+  }
+  return z.object(shape);
+}
+
+module.exports = { handler, httpError, isoDate, patchOf };

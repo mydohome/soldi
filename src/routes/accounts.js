@@ -5,7 +5,7 @@ const { z } = require('zod');
 
 const { query } = require('../db/pool');
 const { requireAuth } = require('../auth/middleware');
-const { handler, httpError } = require('../http/validate');
+const { handler, httpError, patchOf } = require('../http/validate');
 
 const router = express.Router();
 router.use(requireAuth);
@@ -60,7 +60,7 @@ router.patch(
   '/:id',
   handler(async (req, res) => {
     const id = z.coerce.number().int().positive().parse(req.params.id);
-    const patch = accountInput.partial().parse(req.body);
+    const patch = patchOf(accountInput).parse(req.body);
     if (Object.keys(patch).length === 0) throw httpError(400, 'empty_patch', 'Nessun campo da aggiornare');
 
     const updated = await query(

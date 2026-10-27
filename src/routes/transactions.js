@@ -5,7 +5,7 @@ const { z } = require('zod');
 
 const { query, withTransaction } = require('../db/pool');
 const { requireAuth } = require('../auth/middleware');
-const { handler, httpError, isoDate } = require('../http/validate');
+const { handler, httpError, isoDate, patchOf } = require('../http/validate');
 const { assertCategory, categoryPairChanged } = require('../http/category-check');
 const { buildSuggestions } = require('../transactions/suggest');
 const { filterFields, buildTxFilter } = require('../transactions/filters');
@@ -170,7 +170,7 @@ router.patch(
   '/:id',
   handler(async (req, res) => {
     const id = z.coerce.number().int().positive().parse(req.params.id);
-    const patch = txInput.partial().parse(req.body);
+    const patch = patchOf(txInput).parse(req.body);
     if (Object.keys(patch).length === 0) throw httpError(400, 'empty_patch', 'Nessun campo da aggiornare');
     if ('type' in patch || 'categoryId' in patch) {
       // Si valida la coppia effettiva (tipo, categoria) solo se uno dei due cambia davvero:
