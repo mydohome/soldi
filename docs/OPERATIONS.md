@@ -183,6 +183,13 @@ quello: verifica l'intera catena (copia remota → cifratura → ripristino).
 Esce **sempre con 1** se l'aggiornamento non è andato a buon fine, anche dopo un rollback riuscito (il servizio
 resta attivo con la versione precedente). Notifica successo, fallimento e rollback.
 
+**Permessi dei file.** Gli script lavorano con `umask 077` (per i segreti), ma `update` esegue `git` con
+`umask 022`: il codice finisce nell'immagine e deve restare leggibile anche da un utente del container diverso
+dal proprietario (`user: 1001:998` nel compose). Con file in modo `600` l'immagine non è leggibile e il backup
+pre-aggiornamento fallisce con `EACCES … /app/package.json`. Se succede su un'installazione già aggiornata:
+`chmod -R go+rX` sul codice (non su `.env`, `ops.env`, `backups/`), `docker compose exec -u root web chmod -R a+rX /app`,
+poi `git pull --ff-only` da una shell normale e `soldi update`. Il Dockerfile ora imposta comunque `go+rX` su `/app`.
+
 **Limiti.** Il rollback ripristina il *codice*, non il database. Lo schema cresce solo con modifiche additive,
 quindi il codice vecchio gira normalmente sul database nuovo; il dump pre-aggiornamento copre i casi
 distruttivi. Un nuovo pacchetto npm richiede la ricostruzione dell'immagine (lo fa `update`); il pulsante

@@ -127,7 +127,8 @@ fi
 # --- 3. repository, .env, compose, backups ---------------------------------------------------------
 if plan "git clone $REPO_URL $APP_DIR (se manca)"; then :; elif [ ! -d "$APP_DIR/.git" ]; then
   [ "$LAYOUT" = deploy ] || APP_DIR="$COMPOSE_DIR/app"
-  git clone --quiet "$REPO_URL" "$APP_DIR" >&2 || die "git clone non riuscito ($REPO_URL)."
+  # umask 022: il codice finisce nell'immagine e deve restare leggibile (vedi update.sh)
+  (umask 022; git clone --quiet "$REPO_URL" "$APP_DIR") >&2 || die "git clone non riuscito ($REPO_URL)."
   LAYOUT=deploy
   ok "Repository clonato in $APP_DIR"
 fi

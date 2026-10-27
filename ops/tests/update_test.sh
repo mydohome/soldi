@@ -40,6 +40,16 @@ test_1_sano_exit_0_senza_rollback() {
   assert_contains "$(cat "$CURL_STDIN")" "aggiornato" "notifica di successo"
   assert_eq "$(count_files "$HOME_DIR"/.update.lock.d)" 0 "lock rilasciato"
 }
+test_1b_i_file_aggiornati_restano_leggibili_dal_container() {
+  # lib.sh imposta umask 077 (per i segreti): senza accorgimenti `git merge` riscriverebbe il codice con
+  # modo 600 e l'immagine, che copia quei file, non sarebbe leggibile da un utente diverso dal proprietario
+  # (es. `user: 1001:998` nel compose) → `npm run backup` fallisce con EACCES su /app/package.json.
+  setup
+  assert_eq "$(fmode "$HOME_DIR/app/file.txt")" 644 "prima dell'aggiornamento"
+  assert_eq "$(update)" 0
+  assert_eq "$(head_of)" "$C2" "codice aggiornato"
+  assert_eq "$(fmode "$HOME_DIR/app/file.txt")" 644 "file riscritto dal merge con permessi normali"
+}
 test_2_non_sano_rollback_e_exit_1() {
   setup
   echo "$C2" > "$STUB_DIR/bad_sha"
