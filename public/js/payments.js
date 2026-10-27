@@ -277,6 +277,78 @@ export function initPayments(ctx) {
     });
   }
 
+  // «Rate uguali»: stesso importo per ogni rata da pagare, oppure un totale da dividere tra di esse.
+  // Le rate già pagate non cambiano.
+  function openEqualizeModal(plan, onChange) {
+    const open = plan.installments.filter((i) => !i.paid);
+    const residual = open.reduce((s, i) => s + Math.round(i.amount * 100), 0) / 100;
+    const { bd, close } = modal(`
+      <h2>Rate uguali</h2>
+      <p class="muted" style="margin:-8px 0 14px">${escapeHtml(plan.name)} · ${plural(open.length, 'rata da pagare', 'rate da pagare')}, quelle già pagate non cambiano</p>
+      <form id="eq-form">
+        <div class="segment" id="eq-mode" style="margin-bottom:14px">
+          <button type="button" data-m="each" class="active">Stesso importo</button>
+          <button type="button" data-m="total">Dividi un totale</button>
+        </div>
+        <div class="field">
+          <label for="eq-amount" id="eq-label">Importo di ogni rata (€)</label>
+          <input id="eq-amount" type="number" step="0.01" min="0.01" required inputmode="decimal" value="${open[0]?.amount ?? ''}" />
+          <span class="muted" id="eq-preview" style="font-size:.82rem"></span>
+        </div>
+        <span class="error" id="eq-err"></span>
+        <div class="modal-actions">
+          <button type="button" class="btn ghost" id="eq-cancel">Annulla</button>
+          <button type="submit" class="btn primary">Applica</button>
+        </div>
+      </form>`);
+    const form = bd.querySelector('#eq-form');
+    const amountEl = form.querySelector('#eq-amount');
+    const preview = form.querySelector('#eq-preview');
+    let mode = 'each';
+    const paint = () => {
+      const v = Math.round(Number(amountEl.value) * 100);
+      if (!(v > 0)) return (preview.textContent = '');
+      if (mode === 'each') {
+        preview.textContent = `${plural(open.length, 'rata', 'rate')} da ${fmtEur(v / 100)} = ${fmtEur((v * open.length) / 100)} in totale.`;
+        return;
+      }
+      const base = Math.floor(v / open.length);
+      const last = v - base * (open.length - 1);
+      preview.textContent =
+        base <= 0
+          ? 'Totale troppo basso per questo numero di rate.'
+          : last === base
+            ? `${plural(open.length, 'rata', 'rate')} da ${fmtEur(base / 100)}.`
+            : `${open.length - 1} da ${fmtEur(base / 100)} e l'ultima da ${fmtEur(last / 100)}.`;
+    };
+    form.querySelector('#eq-mode').addEventListener('click', (e) => {
+      const b = e.target.closest('button');
+      if (!b) return;
+      mode = b.dataset.m;
+      form.querySelectorAll('#eq-mode button').forEach((x) => x.classList.toggle('active', x === b));
+      form.querySelector('#eq-label').textContent = mode === 'total' ? 'Totale da dividere (€)' : 'Importo di ogni rata (€)';
+      amountEl.value = mode === 'total' ? residual : open[0]?.amount ?? '';
+      paint();
+    });
+    amountEl.addEventListener('input', paint);
+    paint();
+    form.querySelector('#eq-cancel').addEventListener('click', close);
+    form.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const btn = form.querySelector('button[type=submit]');
+      btn.disabled = true;
+      try {
+        await api.post(`/api/payments/${plan.id}/equalize`, { mode, amount: Number(amountEl.value) });
+        close();
+        toast('Rate aggiornate');
+        onChange();
+      } catch (ex) {
+        form.querySelector('#eq-err').textContent = ex.details?.[0]?.message || ex.message;
+        btn.disabled = false;
+      }
+    });
+  }
+
   async function openPlanModal(plan = null, onChange) {
     const cats = state._categories || (await api.categories()).categories;
     const accounts = state._accounts || (await api.accounts()).accounts;
@@ -599,7 +671,10 @@ export function initPayments(ctx) {
         <details class="plan-insts" ${g.completed ? '' : 'open'}>
           <summary>Rate (${g.total})</summary>
           ${p.installments.map((i) => instRow(p, i)).join('')}
-          <button type="button" class="btn ghost small add-inst">${icons.plus}<span>Aggiungi rata</span></button>
+          <div class="inst-foot">
+            <button type="button" class="btn ghost small add-inst">${icons.plus}<span>Aggiungi rata</span></button>
+            ${g.completed ? '' : `<button type="button" class="btn ghost small equalize">${icons.refresh}<span>Rate uguali</span></button>`}
+          </div>
         </details>
       </div>`;
     };
@@ -665,6 +740,7 @@ export function initPayments(ctx) {
       }
       if (t.classList.contains('edit-plan')) return openPlanModal(planOf(t), reload);
       if (t.classList.contains('add-inst')) return openInstModal(planOf(t), null, reload);
+      if (t.classList.contains('equalize')) return openEqualizeModal(planOf(t), reload);
       if (t.classList.contains('edit-inst')) {
         const { plan, inst } = instOf(t);
         return openInstModal(plan, inst, reload);

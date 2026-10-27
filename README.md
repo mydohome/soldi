@@ -340,6 +340,9 @@ In NPM: **Forward Hostname** `<IP_DEL_SERVER_SOLDI>`, **Forward Port** `3010`,
   resta, la rata torna da pagare). Toccando il nome del piano (o «Movimenti collegati») si vedono tutti
   i suoi movimenti, modificabili ed eliminabili da lì: avanzamento, versato e residuo si aggiornano da
   soli perché leggono importo e data dal movimento. Nell'elenco movimenti le rate hanno il badge «rata n/N».
+  **Rate uguali**: dal piano, «Rate uguali» imposta lo stesso importo a tutte le rate ancora da pagare, oppure
+  divide un totale tra di esse (resto dei centesimi sull'ultima); le rate già pagate non cambiano. Ogni
+  singola rata non pagata si corregge con la matita (data e importo).
   **Avvisi**: all'apertura dell'app un pop-up elenca le rate scadute o in scadenza oggi, con «Paga» per
   ognuna; «Più tardi» lo chiude fino alla prossima apertura e sparisce da solo quando registri tutti i
   pagamenti. Sul menu c'è un badge col numero di rate da segnalare e in Dashboard una card con le
@@ -745,7 +748,7 @@ Tutte sotto `/api`, JSON, autenticazione via cookie di sessione.
 | `GET`/`POST`/`PATCH`/`DELETE` | `/api/accounts` | Gestione conti |
 | `GET`/`POST`/`PATCH`/`DELETE` | `/api/recurring` | Gestione spese fisse (`cadence`: monthly\|yearly + `month`; `totalOccurrences` per la durata limitata, con `progress` = avanzamento a calendario, residuo e versato; `startMonth` (AAAA-MM) per l'inizio, `GET /api/recurring/:id/start-preview` per l'anteprima dello spostamento; `DELETE ?keepMovimenti=true` tiene i movimenti già generati) |
 | `POST` | `/api/recurring/run` | Genera subito i movimenti fissi dovuti |
-| `GET`/`POST`/`PATCH`/`DELETE` | `/api/payments` | Pagamenti programmati («Da pagare»): piani con le loro rate, ciascuna con `number`/`total`, `status` (paid\|overdue\|today\|upcoming) e `progress` del piano. `POST /generate` calcola le rate (anteprima), `PATCH`/`DELETE /installments/:id` modificano o tolgono una rata non pagata, `POST /:id/installments` ne aggiunge una |
+| `GET`/`POST`/`PATCH`/`DELETE` | `/api/payments` | Pagamenti programmati («Da pagare»): piani con le loro rate, ciascuna con `number`/`total`, `status` (paid\|overdue\|today\|upcoming) e `progress` del piano. `POST /generate` calcola le rate (anteprima), `PATCH`/`DELETE /installments/:id` modificano o tolgono una rata non pagata, `POST /:id/installments` ne aggiunge una, `POST /:id/equalize` rende uguali quelle da pagare (`mode`: each\|total) |
 | `GET`  | `/api/transactions?paymentPlanId=` | Solo i movimenti che saldano rate del piano; ogni movimento ha `paymentInstallmentId`, `paymentPlanId`, `paymentPlanName`, `paymentNumber`, `paymentTotal`. `POST`/`PATCH /api/transactions` accettano `installmentId` (null = scollega) |
 | `POST` | `/api/payments/installments/:id/pay` | Salda una rata: crea il movimento di spesa e lo collega (`occurredOn`, `amount`, `accountId`, `note` opzionali). Eliminando quel movimento la rata torna da pagare |
 | `GET`  | `/api/payments/due?days=7` | Rate da segnalare (`alert`: scadute o in scadenza oggi) e in arrivo nei prossimi giorni, con i conteggi; alimenta pop-up, badge e card |

@@ -40,16 +40,15 @@ function daysBetween(a, b) {
  * → [{ dueOn, amountCents }]
  */
 function generateInstallments({ count, firstDue, everyMonths = 1, mode = 'each', amountCents }) {
-  const out = [];
-  const base = mode === 'total' ? Math.floor(amountCents / count) : amountCents;
-  const rest = mode === 'total' ? amountCents - base * count : 0;
-  for (let i = 0; i < count; i += 1) {
-    out.push({
-      dueOn: addMonthsClamped(firstDue, i * everyMonths),
-      amountCents: base + (i === count - 1 ? rest : 0),
-    });
-  }
-  return out;
+  const amounts = mode === 'total' ? splitAmount(amountCents, count) : Array(count).fill(amountCents);
+  return amounts.map((a, i) => ({ dueOn: addMonthsClamped(firstDue, i * everyMonths), amountCents: a }));
+}
+
+/** Divide `totalCents` in `count` parti uguali; il resto dei centesimi va sull'ultima. */
+function splitAmount(totalCents, count) {
+  const base = Math.floor(totalCents / count);
+  const rest = totalCents - base * count;
+  return Array.from({ length: count }, (_, i) => base + (i === count - 1 ? rest : 0));
 }
 
 /**
@@ -65,4 +64,4 @@ function installmentStatus({ dueOn, paid }, today) {
   return { status: 'upcoming', daysOverdue: 0, daysToDue: -diff };
 }
 
-module.exports = { todayKey, addMonthsClamped, daysBetween, generateInstallments, installmentStatus };
+module.exports = { todayKey, addMonthsClamped, daysBetween, generateInstallments, splitAmount, installmentStatus };

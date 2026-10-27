@@ -1115,3 +1115,4 @@ code.block {
   .pm-list .tx .meta { flex: 1; }
   .pm-list .tx .amount { margin: 0; }
 }
+.inst-foot { display: flex; flex-wrap: wrap; gap: 4px 8px; margin-top: 4px; }

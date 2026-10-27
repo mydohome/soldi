@@ -338,11 +338,51 @@ describe('modifica di piani e rate', () => {
   });
 });
 
+const planOf = async (c) => (await c.get('/api/payments')).body.plans[0];
+
+describe('rate uguali: POST /api/payments/:id/equalize', () => {
+  it('«ogni rata» imposta lo stesso importo alle sole rate non pagate', async () => {
+    const c = await user('e1');
+    const plan = await makePlan(c, [-4, 5, 20, 40]);
+    await c.post(`/api/payments/installments/${plan.installments[0].id}/pay`, {});
+    const res = await c.post(`/api/payments/${plan.id}/equalize`, { mode: 'each', amount: 250 });
+    assert.equal(res.status, 200, JSON.stringify(res.body));
+    const i = res.body.plan.installments;
+    assert.equal(i[0].paidAmount, 100, 'la rata pagata non cambia');
+    assert.deepEqual(i.slice(1).map((x) => x.amount), [250, 250, 250]);
+    assert.equal(res.body.plan.progress.totalAmount, 100 + 750);
+  });
+
+  it('«totale» divide tra le rate da pagare con il resto dei centesimi sull’ultima', async () => {
+    const c = await user('e2');
+    const plan = await makePlan(c, [-4, 5, 20]);
+    await c.post(`/api/payments/installments/${plan.installments[0].id}/pay`, {});
+    const res = await c.post(`/api/payments/${plan.id}/equalize`, { mode: 'total', amount: 100.01 });
+    assert.equal(res.status, 200);
+    assert.deepEqual(res.body.plan.installments.slice(1).map((x) => x.amount), [50, 50.01]);
+    const all = await c.post(`/api/payments/${plan.id}/equalize`, { mode: 'total', amount: 1000 });
+    assert.deepEqual(all.body.plan.installments.slice(1).map((x) => x.amount), [500, 500]);
+  });
+
+  it('errori: importo troppo basso, piano senza rate da pagare, piano altrui o inesistente, importo non valido', async () => {
+    const a = await user('e3');
+    const b = await user('e4');
+    const plan = await makePlan(a, [-2, 10]);
+    assert.equal((await a.post(`/api/payments/${plan.id}/equalize`, { mode: 'total', amount: 0.01 })).status, 400);
+    assert.equal((await a.post(`/api/payments/${plan.id}/equalize`, { mode: 'each', amount: 0 })).status, 400);
+    assert.equal((await a.post(`/api/payments/${plan.id}/equalize`, { mode: 'boh', amount: 5 })).status, 400);
+    assert.equal((await b.post(`/api/payments/${plan.id}/equalize`, { mode: 'each', amount: 5 })).status, 404);
+    assert.equal((await a.post(`/api/payments/999999/equalize`, { mode: 'each', amount: 5 })).status, 404);
+    assert.deepEqual((await planOf(a)).installments.map((x) => x.amount), [100, 101], 'nulla è cambiato');
+    for (const i of plan.installments) await a.post(`/api/payments/installments/${i.id}/pay`, {});
+    assert.equal((await a.post(`/api/payments/${plan.id}/equalize`, { mode: 'each', amount: 5 })).status, 409);
+  });
+});
+
 describe('movimenti collegati ai piani', () => {
   const txBody = (over = {}) => ({ type: 'expense', amount: 55, scope: 'home', note: 'Bonifico', ...over });
   const txOf = async (c, id) => (await c.get('/api/transactions?limit=200')).body.transactions.find((t) => t.id === id);
-  const planOf = async (c) => (await c.get('/api/payments')).body.plans[0];
-
+  
   it('registrare un movimento con installmentId salda la rata e il movimento mostra piano e numero', async () => {
     const c = await user('l1');
     const plan = await makePlan(c, [-4, 10, 40]);

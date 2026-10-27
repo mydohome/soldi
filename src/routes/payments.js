@@ -7,7 +7,7 @@ const { query, withTransaction } = require('../db/pool');
 const { requireAuth } = require('../auth/middleware');
 const { handler, httpError, isoDate } = require('../http/validate');
 const { assertCategory } = require('../http/category-check');
-const { todayKey, generateInstallments, installmentStatus } = require('../payments/schedule');
+const { todayKey, generateInstallments, splitAmount, installmentStatus } = require('../payments/schedule');
 
 const router = express.Router();
 router.use(requireAuth);
@@ -38,6 +38,7 @@ const generateInput = z.object({
   mode: z.enum(['each', 'total']).default('each'),
   amount: amountField,
 });
+const equalizeInput = z.object({ mode: z.enum(['each', 'total']), amount: amountField });
 const payInput = z.object({
   occurredOn: isoDate.optional(),
   amount: amountField.optional(),
@@ -367,6 +368,36 @@ router.post(
     ]);
     const [plan] = await loadPlans(req.user.id, todayKey(), id);
     res.status(201).json({ plan });
+  })
+);
+
+// Rende uguali le rate NON ancora pagate (quelle pagate non si toccano):
+//   mode 'each'  → ogni rata vale `amount`
+//   mode 'total' → `amount` è il totale da dividere tra le rate da pagare (resto dei centesimi sull'ultima)
+router.post(
+  '/:id/equalize',
+  handler(async (req, res) => {
+    const id = idParam(req.params.id);
+    const input = equalizeInput.parse(req.body);
+    await withTransaction(async (client) => {
+      const own = await client.query('SELECT 1 FROM payment_plans WHERE id = $1 AND user_id = $2 FOR UPDATE', [id, req.user.id]);
+      if (own.rowCount === 0) throw httpError(404, 'not_found', 'Piano non trovato');
+      const open = await client.query(
+        'SELECT id FROM payment_installments WHERE plan_id = $1 AND transaction_id IS NULL ORDER BY due_on, id',
+        [id]
+      );
+      if (open.rowCount === 0) throw httpError(409, 'nothing_to_pay', 'Tutte le rate di questo piano sono già pagate');
+      const cents = toCents(input.amount);
+      const amounts = input.mode === 'total' ? splitAmount(cents, open.rowCount) : Array(open.rowCount).fill(cents);
+      if (amounts.some((a) => a <= 0)) throw httpError(400, 'amount_too_small', 'L’importo totale è troppo basso per questo numero di rate');
+      await client.query(
+        `UPDATE payment_installments i SET amount_cents = v.a
+         FROM unnest($1::bigint[], $2::bigint[]) AS v(id, a) WHERE i.id = v.id`,
+        [open.rows.map((r) => r.id), amounts]
+      );
+    });
+    const [plan] = await loadPlans(req.user.id, todayKey(), id);
+    res.json({ plan });
   })
 );
 
