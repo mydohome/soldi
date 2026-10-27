@@ -8,7 +8,7 @@ WORKDIR /app
 #  - apk upgrade: porta i pacchetti di Alpine alle versioni corrette già pubblicate;
 #  - npm 11 (supporta Node 20) al posto di quello della base, che porta con sé un `tar`
 #    vulnerabile; npm 12 richiede Node ≥ 22, quindi non è un'opzione su questa base;
-#  - npm 11 incorpora ancora brace-expansion 5.0.9 e undici 6.28.0 (HIGH): si sostituiscono
+#  - npm 11 incorpora ancora brace-expansion 5.0.9 e undici 6.28.0 (HIGH, poi anche 6.29.0): si sostituiscono
 #    con le patch già pubblicate (stesse dipendenze) e la build fallisce se la sostituzione
 #    non è riuscita. L'app non usa queste librerie a runtime; i comandi di gestione
 #    (`npm run backup`, `npm run diag`…) richiedono però npm.
@@ -18,7 +18,7 @@ RUN apk upgrade --no-cache \
  && apk add --no-cache git \
  && npm install -g npm@11 \
  && cd /usr/local/lib/node_modules/npm/node_modules \
- && for spec in brace-expansion@5.0.12 undici@6.29.0; do \
+ && for spec in brace-expansion@5.0.12 undici@6.29.1; do \
       name="${spec%@*}"; want="${spec#*@}"; tmp="$(mktemp -d)"; \
       (cd "$tmp" && npm pack "$spec" --silent >/dev/null) || exit 1; \
       rm -rf "$name"; mkdir "$name"; \
