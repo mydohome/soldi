@@ -45,10 +45,14 @@ lock_acquire update
 # git in sola lettura, anonimo e senza prompt: il repository è pubblico, si aggiorna
 # senza credenziali (un credential helper o un token scaduto lasciato da un clone
 # precedente non deve bloccare l'aggiornamento).
-git_ro() {
+# umask 022: lib.sh imposta 077 per i segreti, ma i file di codice scritti da git (merge, reset) finiscono
+# nell'immagine Docker (COPY ne conserva i permessi): con 600 un utente del container diverso dal
+# proprietario non li legge (EACCES su /app/package.json, `npm run backup` fallisce).
+git_ro() (
+  umask 022
   GIT_TERMINAL_PROMPT=0 GIT_ASKPASS=/bin/true GIT_CONFIG_NOSYSTEM=1 \
-    git -c credential.helper= -c 'http.https://github.com/.extraheader=' -c http.extraheader= "$@"
-}
+    exec git -c credential.helper= -c 'http.https://github.com/.extraheader=' -c http.extraheader= "$@"
+)
 app_git() { git_ro -C "$APP_DIR" "$@"; }
 
 # --- 0. cartella non collegata a git (deploy fatto con uno ZIP) ----------------------

@@ -44,7 +44,7 @@ ARG GIT_SHA=""
 ENV GIT_SHA=$GIT_SHA
 
 # Backups are written here; the directory is a mount point in compose.
-RUN mkdir -p /app/backups && chown -R node:node /app
+RUN mkdir -p /app/backups && chown -R node:node /app && chmod -R u+rwX,go+rX /app
 USER node
 
 EXPOSE 3000
