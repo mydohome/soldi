@@ -27,12 +27,14 @@ after(async () => {
 // Il limite di registrazioni del server (20 ogni 15 minuti) impone di riusare gli utenti: ogni
 // richiesta riparte da dati puliti (movimenti e piani dell'utente eliminati).
 const users = {};
+// Due utenti bastano (i test a due voci usano etichette consecutive): si sceglie dalla parità dell'ultimo carattere.
 async function user(tag) {
-  users[tag] ||= await h.registerUser(server.base, `pay-${tag}`);
-  const id = users[tag].user.id;
+  const slot = tag.charCodeAt(tag.length - 1) % 2;
+  users[slot] ||= await h.registerUser(server.base, `pay-${slot}`);
+  const id = users[slot].user.id;
   await h.query('DELETE FROM payment_plans WHERE user_id = $1', [id]);
   await h.query('DELETE FROM transactions WHERE user_id = $1', [id]);
-  return users[tag];
+  return users[slot];
 }
 
 const day = (offset) => {
@@ -339,6 +341,88 @@ describe('modifica di piani e rate', () => {
 });
 
 const planOf = async (c) => (await c.get('/api/payments')).body.plans[0];
+
+describe('modifica del piano con tutte le rate: PATCH /api/payments/:id { installments }', () => {
+  const rows = (plan) => plan.installments.map((i) => ({ id: i.id, dueOn: i.dueOn, amount: i.amount }));
+
+  it('14 rate da 124,71: cambiare la rata 10 ricalcola il totale e le altre restano', async () => {
+    const c = await user('m1');
+    const gen = (await c.post('/api/payments/generate', { count: 14, firstDue: day(5), mode: 'each', amount: 124.71 })).body.installments;
+    const plan = (await c.post('/api/payments', { name: 'Condominio', installments: gen })).body.plan;
+    assert.equal(plan.progress.totalAmount, 1745.94);
+    const list = rows(plan);
+    list[9].amount = 200;
+    const res = await c.patch(`/api/payments/${plan.id}`, { installments: list });
+    assert.equal(res.status, 200, JSON.stringify(res.body));
+    const p = res.body.plan;
+    assert.equal(p.installments.length, 14);
+    assert.equal(p.installments[9].amount, 200);
+    assert.equal(p.installments.filter((i) => i.amount === 124.71).length, 13);
+    assert.equal(p.progress.totalAmount, 1745.94 - 124.71 + 200);
+    assert.deepEqual(p.installments.map((i) => i.id), plan.installments.map((i) => i.id), 'stesse rate, nessuna ricreata');
+  });
+
+  it('aggiunge rate (senza id), elimina quelle non nominate, aggiorna date e campi del piano insieme', async () => {
+    const c = await user('m2');
+    const plan = await makePlan(c, [5, 15, 25]);
+    const [a, , cc] = plan.installments;
+    const res = await c.patch(`/api/payments/${plan.id}`, {
+      name: 'Rinominato',
+      installments: [
+        { id: a.id, dueOn: day(7), amount: 10 },
+        { id: cc.id, dueOn: day(27), amount: 30 },
+        { dueOn: day(60), amount: 40 },
+      ],
+    });
+    assert.equal(res.status, 200, JSON.stringify(res.body));
+    assert.equal(res.body.plan.name, 'Rinominato');
+    assert.deepEqual(res.body.plan.installments.map((i) => [i.dueOn, i.amount]), [[day(7), 10], [day(27), 30], [day(60), 40]]);
+    assert.equal(res.body.plan.installments[0].id, a.id);
+    assert.ok(!res.body.plan.installments.some((i) => i.id === plan.installments[1].id), 'la rata non nominata è stata eliminata');
+  });
+
+  it('le rate pagate restano; non si possono modificare da qui (409) e il piano non cambia', async () => {
+    const c = await user('m3');
+    const plan = await makePlan(c, [-3, 10, 20]);
+    const pay = await c.post(`/api/payments/installments/${plan.installments[0].id}/pay`, { amount: 111 });
+    // lista solo delle non pagate: la pagata resta
+    const ok = await c.patch(`/api/payments/${plan.id}`, { installments: [{ id: plan.installments[1].id, dueOn: day(11), amount: 50 }] });
+    assert.equal(ok.status, 200);
+    assert.deepEqual(ok.body.plan.installments.map((i) => i.paid), [true, false]);
+    assert.equal(ok.body.plan.installments[0].transactionId, pay.body.transactionId);
+    const bad = await c.patch(`/api/payments/${plan.id}`, { installments: [{ id: plan.installments[0].id, dueOn: day(1), amount: 5 }] });
+    assert.equal(bad.status, 409);
+    assert.equal((await planOf(c)).installments[0].paidAmount, 111);
+  });
+
+  it('errori: rata di un altro piano/utente, id ripetuto, nessuna rata, troppe rate; tutto o niente', async () => {
+    const a = await user('m4');
+    const b = await user('m5');
+    const plan = await makePlan(a, [5, 15]);
+    const other = await makePlan(b, [5]);
+    const [i1] = plan.installments;
+    const before = rows(plan);
+    const send = (installments, extra = {}) => a.patch(`/api/payments/${plan.id}`, { installments, ...extra });
+    assert.equal((await send([{ id: other.installments[0].id, dueOn: day(1), amount: 5 }], { name: 'Hack' })).status, 400);
+    assert.equal((await send([{ id: i1.id, dueOn: day(1), amount: 5 }, { id: i1.id, dueOn: day(2), amount: 6 }])).status, 400);
+    assert.equal((await send([])).status, 400, 'senza rate pagate il piano non può restare vuoto');
+    assert.equal((await send([{ dueOn: day(1), amount: 0 }])).status, 400);
+    assert.equal((await send(Array.from({ length: 121 }, (_, k) => ({ dueOn: day(k), amount: 1 })))).status, 400);
+    const after = await planOf(a);
+    assert.equal(after.name, 'Condominio lavori', 'nessuna modifica parziale');
+    assert.deepEqual(rows(after), before);
+    assert.equal((await planOf(b)).installments[0].amount, 100, 'il piano altrui è intatto');
+  });
+
+  it('un piano tutto pagato accetta un elenco vuoto (nessuna rata da modificare)', async () => {
+    const c = await user('m6');
+    const plan = await makePlan(c, [-1]);
+    await c.post(`/api/payments/installments/${plan.installments[0].id}/pay`, {});
+    const res = await c.patch(`/api/payments/${plan.id}`, { name: 'Chiuso', installments: [] });
+    assert.equal(res.status, 200);
+    assert.equal(res.body.plan.installments.length, 1);
+  });
+});
 
 describe('rate uguali: POST /api/payments/:id/equalize', () => {
   it('«ogni rata» imposta lo stesso importo alle sole rate non pagate', async () => {

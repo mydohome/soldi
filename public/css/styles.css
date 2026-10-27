@@ -1116,3 +1116,7 @@ code.block {
   .pm-list .tx .amount { margin: 0; }
 }
 .inst-foot { display: flex; flex-wrap: wrap; gap: 4px 8px; margin-top: 4px; }
+.inst-edit-row.paid input { opacity: 0.6; }
+.inst-edit-row.paid .inst-num { background: color-mix(in srgb, var(--income) 18%, transparent); color: var(--income); }
+.inst-edit-row .inst-num svg { width: 14px; height: 14px; }
+#add-row { margin-top: 6px; }

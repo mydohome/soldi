@@ -323,11 +323,18 @@ router.post(
   })
 );
 
+// Modifica del piano. `installments` (facoltativo) è l'elenco completo desiderato delle rate NON
+// pagate: con `id` aggiorna quella rata, senza `id` ne aggiunge una, quelle non nominate vengono
+// eliminate. Le rate già pagate non si toccano (si modificano dal movimento collegato).
+const patchInput = planShape.partial().extend({
+  installments: z.array(installmentInput.extend({ id: z.coerce.number().int().positive().optional() })).max(MAX_INSTALLMENTS).optional(),
+});
+
 router.patch(
   '/:id',
   handler(async (req, res) => {
     const id = idParam(req.params.id);
-    const patch = planShape.partial().parse(req.body);
+    const patch = patchInput.parse(req.body);
     if (Object.keys(patch).length === 0) throw httpError(400, 'empty_patch', 'Nessun campo da aggiornare');
     const cur = await query('SELECT category_id FROM payment_plans WHERE id = $1 AND user_id = $2', [id, req.user.id]);
     if (cur.rowCount === 0) throw httpError(404, 'not_found', 'Piano non trovato');
@@ -345,7 +352,45 @@ router.patch(
         sets.push(`${c} = $${vals.length}`);
       }
     }
-    await query(`UPDATE payment_plans SET ${sets.join(', ')} WHERE id = $1 AND user_id = $2`, vals);
+
+    await withTransaction(async (client) => {
+      if (sets.length) await client.query(`UPDATE payment_plans SET ${sets.join(', ')} WHERE id = $1 AND user_id = $2`, vals);
+      if (!patch.installments) return;
+
+      const rows = (await client.query('SELECT id, transaction_id FROM payment_installments WHERE plan_id = $1 AND user_id = $2 FOR UPDATE', [id, req.user.id])).rows;
+      const byId = new Map(rows.map((r) => [String(r.id), r]));
+      const paidCount = rows.filter((r) => r.transaction_id != null).length;
+      const list = patch.installments;
+      const seen = new Set();
+      for (const it of list) {
+        if (it.id == null) continue;
+        const r = byId.get(String(it.id));
+        if (!r || seen.has(String(it.id))) throw httpError(400, 'bad_installment', 'Rata non valida');
+        if (r.transaction_id != null) throw httpError(409, 'installment_paid', 'Una rata già pagata non si modifica da qui: modifica il movimento collegato');
+        seen.add(String(it.id));
+      }
+      if (paidCount + list.length < 1) throw httpError(400, 'no_installments', 'Il piano deve avere almeno una rata');
+      if (paidCount + list.length > MAX_INSTALLMENTS) throw httpError(400, 'too_many', `Al massimo ${MAX_INSTALLMENTS} rate per piano`);
+
+      const drop = rows.filter((r) => r.transaction_id == null && !seen.has(String(r.id))).map((r) => r.id);
+      if (drop.length) await client.query('DELETE FROM payment_installments WHERE id = ANY($1::bigint[])', [drop]);
+      const upd = list.filter((it) => it.id != null);
+      if (upd.length) {
+        await client.query(
+          `UPDATE payment_installments i SET due_on = v.d, amount_cents = v.a
+           FROM unnest($1::bigint[], $2::date[], $3::bigint[]) AS v(id, d, a) WHERE i.id = v.id`,
+          [upd.map((it) => it.id), upd.map((it) => it.dueOn), upd.map((it) => toCents(it.amount))]
+        );
+      }
+      const add = list.filter((it) => it.id == null);
+      if (add.length) {
+        await client.query(
+          `INSERT INTO payment_installments (plan_id, user_id, due_on, amount_cents)
+           SELECT $1, $2, d, a FROM unnest($3::date[], $4::bigint[]) AS t(d, a)`,
+          [id, req.user.id, add.map((it) => it.dueOn), add.map((it) => toCents(it.amount))]
+        );
+      }
+    });
     const [plan] = await loadPlans(req.user.id, todayKey(), id);
     res.json({ plan });
   })

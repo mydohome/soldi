@@ -387,11 +387,11 @@ export function initPayments(ctx) {
           <label for="pnote2">Nota</label>
           <input id="pnote2" name="note" maxlength="280" value="${escapeHtml(p.note || '')}" placeholder="Facoltativa" />
         </div>
+        <h3 class="plan-gen-title">Rate</h3>
         ${
           editing
             ? ''
             : `
-        <h3 class="plan-gen-title">Rate</h3>
         <div class="segment" id="gmode-seg" style="margin-bottom:14px">
           <button type="button" data-m="each" class="active">Importo di ogni rata</button>
           <button type="button" data-m="total">Totale da dividere</button>
@@ -423,9 +423,11 @@ export function initPayments(ctx) {
           </div>
         </div>
         <button type="button" class="btn" id="gen-btn">Calcola le rate</button>
-        <p class="muted" style="font-size:.82rem;margin:8px 0 0">Poi puoi correggere data e importo di ogni singola rata.</p>
-        <div id="inst-table" hidden></div>`
+        <p class="muted" style="font-size:.82rem;margin:8px 0 0">Poi puoi correggere data e importo di ogni singola rata.</p>`
         }
+        <div id="inst-table" ${editing ? '' : 'hidden'}></div>
+        <button type="button" class="btn ghost small" id="add-row" ${editing ? '' : 'hidden'}>${icons.plus}<span>Aggiungi rata</span></button>
+        ${editing ? '<p class="muted" style="font-size:.82rem;margin:8px 0 0">Le rate già pagate non si cambiano da qui: modifica il movimento collegato.</p>' : ''}
         <span class="error" id="plan-err"></span>
         <div class="modal-actions">
           <button type="button" class="btn ghost" id="plan-cancel">Annulla</button>
@@ -454,47 +456,71 @@ export function initPayments(ctx) {
     });
     form.querySelector('#plan-cancel').addEventListener('click', close);
 
-    // Generatore delle rate (solo in creazione): il server calcola, l'utente corregge le righe.
-    let rows = [];
+    // Tabella delle rate: in creazione la riempie il generatore, in modifica parte da tutte le rate del
+    // piano (le pagate sono bloccate). Il totale si ricalcola a ogni modifica.
+    let rows = editing
+      ? plan.installments.map((i) => ({ id: i.id, dueOn: i.dueOn, amount: i.paid ? i.paidAmount : i.amount, paid: i.paid }))
+      : [];
     let mode = 'each';
+    const table = form.querySelector('#inst-table');
+    const save = form.querySelector('#plan-save');
+    const addRow = form.querySelector('#add-row');
+    const cents = (v) => Math.round(Number(v || 0) * 100);
+    const totalOf = () => rows.reduce((sum, r) => sum + cents(r.amount), 0) / 100;
+    const headHtml = () => {
+      const paidN = rows.filter((r) => r.paid).length;
+      return `<span>${plural(rows.length, 'rata', 'rate')}${paidN ? ` · ${paidN} pagate` : ''}</span><strong>Totale ${fmtEur(totalOf())}</strong>`;
+    };
+    const nextMonthISO = (iso) => {
+      const [y, m, d] = iso.split('-').map(Number);
+      const last = new Date(Date.UTC(y, m + 1, 0)).getUTCDate();
+      return new Date(Date.UTC(y, m, Math.min(d, last))).toISOString().slice(0, 10);
+    };
+    const renderTable = () => {
+      table.hidden = rows.length === 0;
+      addRow.hidden = rows.length === 0;
+      if (!editing) save.disabled = rows.length === 0;
+      table.innerHTML = `
+        <div class="inst-edit-head">${headHtml()}</div>
+        ${rows
+          .map(
+            (r, i) => `
+          <div class="inst-edit-row ${r.paid ? 'paid' : ''}" data-i="${i}">
+            <span class="inst-num" ${r.paid ? 'title="Pagata"' : ''}>${r.paid ? icons.check : i + 1}</span>
+            <input type="date" class="ir-date" value="${r.dueOn}" aria-label="Scadenza rata ${i + 1}" ${r.paid ? 'disabled' : ''} />
+            <input type="number" class="ir-amount" step="0.01" min="0.01" inputmode="decimal" value="${r.amount}" aria-label="Importo rata ${i + 1}" ${r.paid ? 'disabled' : ''} />
+            <button type="button" class="icon-btn ir-del" aria-label="Rimuovi rata ${i + 1}" ${r.paid || rows.length === 1 ? 'disabled' : ''}>${icons.trash}</button>
+          </div>`
+          )
+          .join('')}`;
+    };
+    table.addEventListener('input', (e) => {
+      const row = e.target.closest('.inst-edit-row');
+      if (!row) return;
+      const r = rows[Number(row.dataset.i)];
+      if (r.paid) return;
+      if (e.target.classList.contains('ir-date')) r.dueOn = e.target.value;
+      if (e.target.classList.contains('ir-amount')) {
+        r.amount = e.target.value === '' ? '' : Number(e.target.value);
+        table.querySelector('.inst-edit-head').innerHTML = headHtml();
+      }
+    });
+    table.addEventListener('click', (e) => {
+      const del = e.target.closest('.ir-del');
+      if (!del || del.disabled || rows.length === 1) return;
+      rows.splice(Number(del.closest('.inst-edit-row').dataset.i), 1);
+      renderTable();
+    });
+    addRow.addEventListener('click', () => {
+      const last = rows[rows.length - 1];
+      rows.push({ dueOn: nextMonthISO(last?.dueOn || today()), amount: last?.amount || '' });
+      renderTable();
+      table.scrollTop = table.scrollHeight;
+    });
+    if (editing) renderTable();
+
+    // Generatore delle rate (solo in creazione): il server calcola, l'utente corregge le righe.
     if (!editing) {
-      const table = form.querySelector('#inst-table');
-      const save = form.querySelector('#plan-save');
-      const renderTable = () => {
-        const total = rows.reduce((s, r) => s + Math.round(Number(r.amount || 0) * 100), 0) / 100;
-        table.hidden = rows.length === 0;
-        save.disabled = rows.length === 0;
-        table.innerHTML = `
-          <div class="inst-edit-head"><span>${plural(rows.length, 'rata', 'rate')}</span><strong>Totale ${fmtEur(total)}</strong></div>
-          ${rows
-            .map(
-              (r, i) => `
-            <div class="inst-edit-row" data-i="${i}">
-              <span class="inst-num">${i + 1}</span>
-              <input type="date" class="ir-date" value="${r.dueOn}" aria-label="Scadenza rata ${i + 1}" />
-              <input type="number" class="ir-amount" step="0.01" min="0.01" inputmode="decimal" value="${r.amount}" aria-label="Importo rata ${i + 1}" />
-              <button type="button" class="icon-btn ir-del" aria-label="Rimuovi rata ${i + 1}" ${rows.length === 1 ? 'disabled' : ''}>${icons.trash}</button>
-            </div>`
-            )
-            .join('')}`;
-      };
-      table.addEventListener('input', (e) => {
-        const row = e.target.closest('.inst-edit-row');
-        if (!row) return;
-        const r = rows[Number(row.dataset.i)];
-        if (e.target.classList.contains('ir-date')) r.dueOn = e.target.value;
-        if (e.target.classList.contains('ir-amount')) {
-          r.amount = e.target.value === '' ? '' : Number(e.target.value);
-          const total = rows.reduce((s, x) => s + Math.round(Number(x.amount || 0) * 100), 0) / 100;
-          table.querySelector('.inst-edit-head strong').textContent = `Totale ${fmtEur(total)}`;
-        }
-      });
-      table.addEventListener('click', (e) => {
-        const del = e.target.closest('.ir-del');
-        if (!del || rows.length === 1) return;
-        rows.splice(Number(del.closest('.inst-edit-row').dataset.i), 1);
-        renderTable();
-      });
       form.querySelector('#gmode-seg').addEventListener('click', (e) => {
         const b = e.target.closest('button');
         if (!b) return;
@@ -536,13 +562,13 @@ export function initPayments(ctx) {
         scope,
         note: fd.note || '',
       };
-      if (!editing) {
-        if (rows.some((r) => !r.dueOn || !(Number(r.amount) > 0))) {
-          errEl.textContent = 'Ogni rata deve avere una data e un importo maggiore di zero';
-          return;
-        }
-        body.installments = rows.map((r) => ({ dueOn: r.dueOn, amount: Number(r.amount) }));
+      // In modifica si inviano solo le rate non pagate (con id = aggiorna, senza = nuova; le tolte si eliminano).
+      const sent = rows.filter((r) => !r.paid);
+      if (sent.some((r) => !r.dueOn || !(Number(r.amount) > 0))) {
+        errEl.textContent = 'Ogni rata deve avere una data e un importo maggiore di zero';
+        return;
       }
+      body.installments = sent.map((r) => ({ ...(r.id ? { id: r.id } : {}), dueOn: r.dueOn, amount: Number(r.amount) }));
       const btn = form.querySelector('#plan-save');
       btn.disabled = true;
       try {
