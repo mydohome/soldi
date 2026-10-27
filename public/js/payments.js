@@ -5,7 +5,7 @@
 export function initPayments(ctx) {
   const {
     state, api, h, modal, toast, choiceModal, escapeHtml, fmtEur, icons, scopeBadge, catField, wireQuickCat,
-    today, refreshView, goToFisse, emptyState,
+    today, refreshView, goToFisse, emptyState, txRow, bindTxRows, openTxModal,
   } = ctx;
 
   const dmy = (s) => `${s.slice(8, 10)}/${s.slice(5, 7)}/${s.slice(0, 4)}`;
@@ -76,7 +76,7 @@ export function initPayments(ctx) {
         </div>
         <div class="field">
           <label for="pnote">Nota</label>
-          <input id="pnote" name="note" maxlength="280" value="${escapeHtml(`${item.planName} — rata ${item.number}/${item.total}`)}" />
+          <input id="pnote" name="note" maxlength="280" value="${escapeHtml(`${item.planName} ${item.number} di ${item.total}`)}" />
         </div>
         <span class="error" id="pay-err"></span>
         <div class="modal-actions">
@@ -486,6 +486,45 @@ export function initPayments(ctx) {
     });
   }
 
+  /* ------------------------------------------------------------ movimenti collegati a un piano */
+  // Elenco di tutti i movimenti che saldano rate del piano: si modificano o eliminano da qui e il
+  // piano (avanzamento, residuo) si aggiorna da solo perché legge importo e data dal movimento.
+  async function openPlanMovements(plan) {
+    const { bd, close } = modal(`
+      <h2>${escapeHtml(plan.name)}</h2>
+      <p class="muted" id="pm-sub" style="margin:-8px 0 12px"></p>
+      <div id="pm-list" class="pm-list"></div>
+      <div class="modal-actions">
+        <button type="button" class="btn ghost" id="pm-close">Chiudi</button>
+      </div>`);
+    bd.querySelector('#pm-close').addEventListener('click', close);
+    const list = bd.querySelector('#pm-list');
+    const sub = bd.querySelector('#pm-sub');
+    const load = async () => {
+      let txs;
+      let cur;
+      try {
+        const [t, p] = await Promise.all([api.transactions(`paymentPlanId=${plan.id}&limit=500`), api.payments()]);
+        txs = t.transactions;
+        cur = p.plans.find((x) => x.id === plan.id);
+      } catch (e) {
+        list.innerHTML = `<div class="empty">Errore nel caricamento: ${escapeHtml(e.message)}</div>`;
+        return;
+      }
+      if (!cur) return close(); // piano eliminato nel frattempo
+      const g = cur.progress;
+      sub.innerHTML = `${g.paidCount} di ${g.total} rate pagate · versato <strong>${fmtEur(g.paidAmount)}</strong> · residuo ${fmtEur(g.remainingAmount)}`;
+      list.innerHTML = txs.length
+        ? txs.map(txRow).join('')
+        : emptyState('Nessun movimento collegato. Registra un pagamento con «Paga» oppure collega un movimento esistente dalla sua modifica.');
+      bindTxRows(list, async () => {
+        await load();
+        refreshView();
+      });
+    };
+    await load();
+  }
+
   /* ------------------------------------------------------------ schermata «Da pagare» */
   async function viewDaPagare(main) {
     let data;
@@ -516,7 +555,8 @@ export function initPayments(ctx) {
         <div class="inst-actions">
           ${
             i.paid
-              ? `<button type="button" class="btn ghost small undo-pay">Annulla pagamento</button>`
+              ? `<button type="button" class="icon-btn edit-pay" aria-label="Modifica pagamento">${icons.edit}</button>
+                 <button type="button" class="btn ghost small undo-pay">Annulla pagamento</button>`
               : `<button type="button" class="btn ${i.status === 'upcoming' ? '' : 'primary'} small pay-inst">Paga</button>
                  <button type="button" class="icon-btn edit-inst" aria-label="Modifica rata">${icons.edit}</button>
                  <button type="button" class="icon-btn del-inst" aria-label="Elimina rata">${icons.trash}</button>`
@@ -530,10 +570,10 @@ export function initPayments(ctx) {
       <div class="card plan-card ${g.completed ? 'is-done' : ''}" data-plan="${p.id}">
         <div class="plan-head">
           <span class="dot" style="background:${p.categoryColor || 'var(--brand)'}"></span>
-          <div class="meta">
+          <button type="button" class="meta plan-title show-moves" title="Vedi i movimenti collegati">
             <div class="name">${escapeHtml(p.name)} ${scopeBadge(p.scope)}</div>
             <div class="cat">${[p.categoryName, p.accountName, p.note].filter(Boolean).map(escapeHtml).join(' · ') || '&nbsp;'}</div>
-          </div>
+          </button>
           <div class="row-tail">
             <button type="button" class="icon-btn edit-plan" aria-label="Modifica piano">${icons.edit}</button>
             <button type="button" class="icon-btn del-plan" aria-label="Elimina piano">${icons.trash}</button>
@@ -554,6 +594,7 @@ export function initPayments(ctx) {
             <span>Pagato ${fmtEur(g.paidAmount)} di ${fmtEur(g.totalAmount)}</span>
             ${g.next ? `<span>Prossima: ${dmy(g.next.dueOn)}${g.overdueCount ? ` · <strong class="late">${plural(g.overdueCount, 'scaduta', 'scadute')}</strong>` : ''}</span>` : ''}
           </div>
+          <button type="button" class="btn ghost small show-moves">${icons.list}<span>Movimenti collegati (${g.paidCount})</span></button>
         </div>
         <details class="plan-insts" ${g.completed ? '' : 'open'}>
           <summary>Rate (${g.total})</summary>
@@ -610,6 +651,18 @@ export function initPayments(ctx) {
     page.addEventListener('click', async (e) => {
       const t = e.target.closest('button');
       if (!t) return;
+      if (t.classList.contains('show-moves')) return openPlanMovements(planOf(t));
+      if (t.classList.contains('edit-pay')) {
+        const { plan, inst } = instOf(t);
+        try {
+          const { transactions } = await api.transactions(`paymentPlanId=${plan.id}&limit=500`);
+          const tx = transactions.find((x) => x.id === inst.transactionId);
+          if (tx) openTxModal(tx, reload);
+        } catch (ex) {
+          toast(ex.message, 'error');
+        }
+        return;
+      }
       if (t.classList.contains('edit-plan')) return openPlanModal(planOf(t), reload);
       if (t.classList.contains('add-inst')) return openInstModal(planOf(t), null, reload);
       if (t.classList.contains('edit-inst')) {
@@ -685,5 +738,5 @@ export function initPayments(ctx) {
     });
   }
 
-  return { viewDaPagare, refreshDue, checkOnOpen, openDuePopup, dueCardHtml, bindDueCard, fisseTabsHtml, bindFisseTabs, openPayModal };
+  return { openPlanMovements, viewDaPagare, refreshDue, checkOnOpen, openDuePopup, dueCardHtml, bindDueCard, fisseTabsHtml, bindFisseTabs, openPayModal };
 }

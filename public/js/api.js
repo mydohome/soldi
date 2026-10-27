@@ -18,6 +18,9 @@ async function request(method, path, body) {
     }
   }
 
+  // Dopo ogni modifica a movimenti o piani di pagamento l'app può riallineare badge e scadenze.
+  if (res.ok && method !== 'GET' && /^\/api\/(transactions|payments)/.test(path)) api.onMutate?.(method, path);
+
   if (!res.ok) {
     const err = new Error((data && (data.message || data.error)) || `HTTP ${res.status}`);
     err.status = res.status;

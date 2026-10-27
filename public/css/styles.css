@@ -1093,3 +1093,25 @@ code.block {
   background: var(--bg); color: var(--ink); outline: none; font-size: 16px; /* iOS: niente zoom al focus */
 }
 .inst-edit-row input:focus { border-color: var(--brand); box-shadow: 0 0 0 3px color-mix(in srgb, var(--brand) 20%, transparent); }
+
+/* Movimenti collegati ai piani di pagamento */
+.scope-badge.rata { background: color-mix(in srgb, var(--income) 16%, transparent); color: var(--income); }
+.plan-title {
+  background: none; border: none; padding: 0; text-align: left; color: inherit; font: inherit;
+  cursor: pointer; -webkit-tap-highlight-color: transparent;
+}
+.plan-title:hover .name { text-decoration: underline; text-underline-offset: 3px; }
+.plan-title:focus-visible { outline: 2px solid var(--brand); outline-offset: 3px; border-radius: 6px; }
+.rule-progress + .btn.show-moves, .plan-card .rule-progress > .show-moves { margin-top: 8px; }
+.pm-list { max-height: 55vh; overflow-y: auto; }
+#plan-field select { width: 100%; max-width: 100%; min-width: 0; text-overflow: ellipsis; }
+/* Elenco compatto dentro la finestra: su telefono nome e dettaglio a tutta larghezza, importo e azioni sotto. */
+.pm-list .tx { padding: 12px 2px; gap: 10px; flex-wrap: wrap; }
+.pm-list .tx .meta { flex: 1 1 calc(100% - 50px); }
+.pm-list .tx .meta .name { white-space: normal; overflow-wrap: anywhere; }
+.pm-list .tx .amount { margin-left: 48px; margin-right: auto; }
+@media (min-width: 561px) {
+  .pm-list .tx { flex-wrap: nowrap; }
+  .pm-list .tx .meta { flex: 1; }
+  .pm-list .tx .amount { margin: 0; }
+}

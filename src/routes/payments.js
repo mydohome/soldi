@@ -307,7 +307,7 @@ router.post(
       );
       const p = info.rows[0];
       const accountId = 'accountId' in input ? input.accountId : p.account_id;
-      const note = input.note ?? `${p.name} — rata ${p.number}/${p.total}`;
+      const note = input.note ?? `${p.name} ${p.number} di ${p.total}`;
       const amountCents = input.amount != null ? toCents(input.amount) : lock.rows[0].amount_cents;
 
       const tx = await client.query(

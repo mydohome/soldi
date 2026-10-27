@@ -213,7 +213,7 @@ describe('pagamento di una rata: POST /api/payments/installments/:id/pay', () =>
     assert.equal(tx.accountId, accounts[0].id);
     assert.equal(tx.scope, 'home');
     assert.equal(tx.occurredOn, todayKey());
-    assert.equal(tx.note, 'Condominio lavori — rata 2/3');
+    assert.equal(tx.note, 'Condominio lavori 2 di 3');
   });
 
   it('data, importo, conto e nota si possono cambiare; l’avanzamento usa l’importo realmente pagato', async () => {
@@ -335,6 +335,142 @@ describe('modifica di piani e rate', () => {
     const still = (await c.get('/api/transactions?limit=50')).body.transactions.some((t) => t.id === pay.body.transactionId);
     assert.ok(still);
     assert.equal((await c.del(`/api/payments/${plan.id}`)).status, 404);
+  });
+});
+
+describe('movimenti collegati ai piani', () => {
+  const txBody = (over = {}) => ({ type: 'expense', amount: 55, scope: 'home', note: 'Bonifico', ...over });
+  const txOf = async (c, id) => (await c.get('/api/transactions?limit=200')).body.transactions.find((t) => t.id === id);
+  const planOf = async (c) => (await c.get('/api/payments')).body.plans[0];
+
+  it('registrare un movimento con installmentId salda la rata e il movimento mostra piano e numero', async () => {
+    const c = await user('l1');
+    const plan = await makePlan(c, [-4, 10, 40]);
+    const inst = plan.installments[1];
+    const res = await c.post('/api/transactions', txBody({ amount: 101, note: 'Condominio lavori 2 di 3', installmentId: inst.id }));
+    assert.equal(res.status, 201, JSON.stringify(res.body));
+    const t = res.body.transaction;
+    assert.equal(t.paymentInstallmentId, inst.id);
+    assert.equal(t.paymentPlanId, plan.id);
+    assert.equal(t.paymentPlanName, 'Condominio lavori');
+    assert.deepEqual([t.paymentNumber, t.paymentTotal], [2, 3]);
+    const p = await planOf(c);
+    assert.equal(p.installments[1].paid, true);
+    assert.equal(p.installments[1].transactionId, t.id);
+    assert.equal(p.progress.paidCount, 1);
+    assert.equal((await dueOf(c)).counts.alert, 1); // resta solo la prima, scaduta
+  });
+
+  it('un movimento senza collegamento non ha i campi del piano; solo una spesa può saldare una rata', async () => {
+    const c = await user('l2');
+    const plan = await makePlan(c, [3]);
+    const plain = (await c.post('/api/transactions', txBody())).body.transaction;
+    assert.equal(plain.paymentInstallmentId, null);
+    assert.equal(plain.paymentPlanName, null);
+    const income = await c.post('/api/transactions', txBody({ type: 'income', installmentId: plan.installments[0].id }));
+    assert.equal(income.status, 400);
+    assert.equal((await dueOf(c, 30)).counts.upcoming, 1, 'nessun movimento creato a metà');
+    assert.equal((await h.query('SELECT count(*)::int AS n FROM transactions WHERE user_id = $1', [c.user.id])).rows[0].n, 1);
+  });
+
+  it('rata già saldata → 409 senza creare il movimento; rata di un altro utente o inesistente → 400', async () => {
+    const a = await user('l3');
+    const b = await user('l4');
+    const plan = await makePlan(a, [-1, 20]);
+    const first = plan.installments[0].id;
+    assert.equal((await a.post('/api/transactions', txBody({ installmentId: first }))).status, 201);
+    assert.equal((await a.post('/api/transactions', txBody({ installmentId: first }))).status, 409);
+    assert.equal((await b.post('/api/transactions', txBody({ installmentId: plan.installments[1].id }))).status, 400);
+    assert.equal((await a.post('/api/transactions', txBody({ installmentId: 999999 }))).status, 400);
+    assert.equal((await h.query('SELECT count(*)::int AS n FROM transactions WHERE user_id = $1', [a.user.id])).rows[0].n, 1);
+    assert.equal((await h.query('SELECT count(*)::int AS n FROM transactions WHERE user_id = $1', [b.user.id])).rows[0].n, 0);
+  });
+
+  it('modificare importo e data di un pagamento già registrato aggiorna il piano', async () => {
+    const c = await user('l5');
+    const plan = await makePlan(c, [-4, 10]);
+    const pay = await c.post(`/api/payments/installments/${plan.installments[0].id}/pay`, {});
+    const before = await planOf(c);
+    assert.equal(before.progress.paidAmount, 100);
+    const edit = await c.patch(`/api/transactions/${pay.body.transactionId}`, { amount: 130.25, occurredOn: day(-2) });
+    assert.equal(edit.status, 200);
+    const after = await planOf(c);
+    assert.equal(after.installments[0].paidAmount, 130.25);
+    assert.equal(after.installments[0].paidOn, day(-2));
+    assert.equal(after.progress.paidAmount, 130.25);
+    assert.equal(after.progress.totalAmount, 130.25 + 101);
+    assert.equal(after.progress.remainingAmount, 101);
+    assert.equal(after.installments[0].transactionId, pay.body.transactionId);
+  });
+
+  it('scollegare (installmentId null) lascia il movimento ma la rata torna da pagare; ricollegare la sposta', async () => {
+    const c = await user('l6');
+    const plan = await makePlan(c, [-4, -2, 30]);
+    const [i1, i2] = plan.installments;
+    const pay = await c.post(`/api/payments/installments/${i1.id}/pay`, {});
+    const txId = pay.body.transactionId;
+    const un = await c.patch(`/api/transactions/${txId}`, { installmentId: null });
+    assert.equal(un.status, 200);
+    assert.equal(un.body.transaction.paymentInstallmentId, null);
+    assert.ok(await txOf(c, txId), 'il movimento resta');
+    assert.equal((await planOf(c)).installments[0].paid, false);
+    // lo collego alla seconda rata
+    const re = await c.patch(`/api/transactions/${txId}`, { installmentId: i2.id });
+    assert.equal(re.status, 200);
+    assert.deepEqual([re.body.transaction.paymentNumber, re.body.transaction.paymentTotal], [2, 3]);
+    let p = await planOf(c);
+    assert.deepEqual(p.installments.map((i) => i.paid), [false, true, false]);
+    // spostarlo sulla prima libera la seconda
+    await c.patch(`/api/transactions/${txId}`, { installmentId: i1.id });
+    p = await planOf(c);
+    assert.deepEqual(p.installments.map((i) => i.paid), [true, false, false]);
+    // un movimento qualsiasi si può collegare a una rata libera
+    const loose = (await c.post('/api/transactions', txBody({ amount: 99 }))).body.transaction;
+    assert.equal((await c.patch(`/api/transactions/${loose.id}`, { installmentId: i2.id })).status, 200);
+    assert.equal((await planOf(c)).progress.paidCount, 2);
+    // …ma non a una già saldata da un altro movimento
+    assert.equal((await c.patch(`/api/transactions/${loose.id}`, { installmentId: i1.id })).status, 409);
+    assert.equal((await planOf(c)).installments[1].transactionId, loose.id, 'la rata resta com’era dopo l’errore');
+  });
+
+  it('un movimento collegato non può diventare un’entrata (400, nulla cambia); scollegato sì', async () => {
+    const c = await user('l7');
+    const plan = await makePlan(c, [-1]);
+    const pay = await c.post(`/api/payments/installments/${plan.installments[0].id}/pay`, {});
+    const txId = pay.body.transactionId;
+    assert.equal((await c.patch(`/api/transactions/${txId}`, { type: 'income', categoryId: null })).status, 400);
+    assert.equal((await txOf(c, txId)).type, 'expense');
+    const both = await c.patch(`/api/transactions/${txId}`, { type: 'income', categoryId: null, installmentId: null });
+    assert.equal(both.status, 200);
+    assert.equal(both.body.transaction.type, 'income');
+    assert.equal((await planOf(c)).installments[0].paid, false);
+  });
+
+  it('GET /api/transactions?paymentPlanId= elenca solo i movimenti del piano; un piano altrui non restituisce nulla', async () => {
+    const a = await user('l8');
+    const b = await user('l9');
+    const planA = await makePlan(a, [-3, -2, 20], { name: 'Piano A' });
+    const planA2 = await makePlan(a, [-1], { name: 'Altro piano' });
+    await a.post(`/api/payments/installments/${planA.installments[0].id}/pay`, {});
+    await a.post(`/api/payments/installments/${planA.installments[1].id}/pay`, {});
+    await a.post(`/api/payments/installments/${planA2.installments[0].id}/pay`, {});
+    await a.post('/api/transactions', txBody());
+    const list = (await a.get(`/api/transactions?paymentPlanId=${planA.id}&limit=50`)).body.transactions;
+    assert.equal(list.length, 2);
+    assert.ok(list.every((t) => t.paymentPlanId === planA.id));
+    assert.deepEqual(list.map((t) => t.paymentNumber).sort(), [1, 2]);
+    assert.equal((await b.get(`/api/transactions?paymentPlanId=${planA.id}&limit=50`)).body.transactions.length, 0);
+    assert.equal((await a.get('/api/transactions?limit=50')).body.transactions.length, 4);
+  });
+
+  it('le rate scollegate dal piano (rata eliminata dopo il pagamento non è permesso) restano coerenti con il numero d’ordine', async () => {
+    const c = await user('l10');
+    const plan = await makePlan(c, [-5, -3, 20]);
+    const pay = await c.post(`/api/payments/installments/${plan.installments[1].id}/pay`, {});
+    // elimino la prima (non pagata): il pagamento passa da 2/3 a 1/2
+    assert.equal((await c.del(`/api/payments/installments/${plan.installments[0].id}`)).status, 200);
+    const t = await txOf(c, pay.body.transactionId);
+    assert.deepEqual([t.paymentNumber, t.paymentTotal], [1, 2]);
   });
 });
 
