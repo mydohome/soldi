@@ -5,7 +5,7 @@ const { z } = require('zod');
 
 const { query, withTransaction } = require('../db/pool');
 const { requireAuth } = require('../auth/middleware');
-const { handler, httpError, isoDate } = require('../http/validate');
+const { handler, httpError, isoDate, patchOf } = require('../http/validate');
 const { assertCategory } = require('../http/category-check');
 const { todayKey, generateInstallments, splitAmount, installmentStatus } = require('../payments/schedule');
 
@@ -239,7 +239,7 @@ router.patch(
   '/installments/:iid',
   handler(async (req, res) => {
     const iid = idParam(req.params.iid);
-    const patch = installmentInput.partial().parse(req.body);
+    const patch = patchOf(installmentInput).parse(req.body);
     if (Object.keys(patch).length === 0) throw httpError(400, 'empty_patch', 'Nessun campo da aggiornare');
     const cur = await query('SELECT plan_id, transaction_id FROM payment_installments WHERE id = $1 AND user_id = $2', [iid, req.user.id]);
     if (cur.rowCount === 0) throw httpError(404, 'not_found', 'Rata non trovata');
@@ -326,7 +326,7 @@ router.post(
 // Modifica del piano. `installments` (facoltativo) è l'elenco completo desiderato delle rate NON
 // pagate: con `id` aggiorna quella rata, senza `id` ne aggiunge una, quelle non nominate vengono
 // eliminate. Le rate già pagate non si toccano (si modificano dal movimento collegato).
-const patchInput = planShape.partial().extend({
+const patchInput = patchOf(planShape).extend({
   installments: z.array(installmentInput.extend({ id: z.coerce.number().int().positive().optional() })).max(MAX_INSTALLMENTS).optional(),
 });
 
