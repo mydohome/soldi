@@ -436,7 +436,6 @@ async function viewDashboard(main) {
               ${
                 data.expenseByCategory.length
                   ? data.expenseByCategory
-                      .slice(0, 6)
                       .map(
                         (c) =>
                           `<div class="row"><span class="dot" style="background:${c.color}"></span>${escapeHtml(
