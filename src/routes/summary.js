@@ -11,6 +11,7 @@ const router = express.Router();
 router.use(requireAuth);
 
 const { isoDate } = require('../http/validate');
+const { todayKey } = require('../payments/schedule');
 const scopeParam = z.enum(['personal', 'home']).optional();
 const euros = (cents) => Number(cents || 0) / 100;
 
@@ -163,6 +164,117 @@ async function scopeSplit(userId, from, to) {
   return out;
 }
 
+const daysInMonthOf = (ymd) => {
+  const [y, m] = ymd.split('-').map(Number);
+  return new Date(Date.UTC(y, m, 0)).getUTCDate();
+};
+
+/** Uscite di una finestra, con la quota generata dalle spese fisse (movimenti con recurring_rule_id). */
+async function expenseSplit(userId, from, to, scope) {
+  const sf = scopeFilter(scope, 4);
+  const params = [userId, from, to];
+  if (sf.value) params.push(sf.value);
+  const r = await query(
+    `SELECT COALESCE(SUM(t.amount_cents), 0) AS expense,
+            COALESCE(SUM(t.amount_cents) FILTER (WHERE t.recurring_rule_id IS NOT NULL), 0) AS fixed
+     FROM transactions t
+     WHERE t.user_id = $1 AND t.type = 'expense' AND t.occurred_on BETWEEN $2 AND $3${sf.clause}`,
+    params
+  );
+  return { expense: Number(r.rows[0].expense), fixed: Number(r.rows[0].fixed) };
+}
+
+/**
+ * Picchi del mese tra le spese NON fisse (un affitto o una rata sono sempre «la più alta» e non dicono
+ * nulla): la singola spesa più alta e il giorno in cui si è speso di più.
+ */
+async function monthPeaks(userId, from, to, scope) {
+  const sf = scopeFilter(scope, 4);
+  const params = [userId, from, to];
+  if (sf.value) params.push(sf.value);
+  const base = `t.user_id = $1 AND t.type = 'expense' AND t.recurring_rule_id IS NULL
+                AND t.occurred_on BETWEEN $2 AND $3${sf.clause}`;
+  const [one, day] = await Promise.all([
+    query(
+      `SELECT t.amount_cents, t.occurred_on, t.note, c.name AS category
+       FROM transactions t LEFT JOIN categories c ON c.id = t.category_id
+       WHERE ${base}
+       ORDER BY t.amount_cents DESC, t.occurred_on DESC, t.id DESC LIMIT 1`,
+      params
+    ),
+    query(
+      `SELECT t.occurred_on, SUM(t.amount_cents) AS total
+       FROM transactions t
+       WHERE ${base}
+       GROUP BY t.occurred_on
+       ORDER BY total DESC, t.occurred_on DESC LIMIT 1`,
+      params
+    ),
+  ]);
+  const o = one.rows[0];
+  const dd = day.rows[0];
+  return {
+    peak: o
+      ? { amount: euros(o.amount_cents), date: o.occurred_on, note: o.note || '', category: o.category || null }
+      : null,
+    peakDay: dd ? { date: dd.occurred_on, amount: euros(dd.total) } : null,
+  };
+}
+
+/**
+ * Indicatori delle uscite del mese dell'ancora: media al giorno con e senza spese fisse, peso delle
+ * spese fisse, picchi, proiezione a fine mese e confronto col mese precedente. Gli importi sono in
+ * centesimi fino all'ultimo passaggio, per non accumulare errori di arrotondamento.
+ */
+async function monthInsights(userId, win, scope, now = todayKey()) {
+  const from = win.month_from;
+  const to = win.month_to;
+  const days = daysInMonthOf(from);
+  // giorni «trascorsi»: tutto il mese se è passato, 0 se è futuro, il giorno di oggi se è in corso
+  const isCurrent = now >= from && now <= to;
+  const elapsed = now > to ? days : isCurrent ? Number(now.slice(8, 10)) : 0;
+  const prevDays = daysInMonthOf(win.prev_from);
+
+  const [cur, prev, peaks] = await Promise.all([
+    expenseSplit(userId, from, to, scope),
+    expenseSplit(userId, win.prev_from, win.prev_to, scope),
+    monthPeaks(userId, from, to, scope),
+  ]);
+
+  const perDay = (cents, n) => (n > 0 ? euros(Math.round(cents / n)) : null);
+  const variable = cur.expense - cur.fixed;
+  const prevVariable = prev.expense - prev.fixed;
+  // Stima di fine mese solo per il mese in corso e con almeno 5 giorni di dati: le spese fisse sono
+  // già registrate per intero (o quasi), quelle variabili si proiettano alla media giornaliera.
+  const projection =
+    isCurrent && elapsed >= 5 ? euros(cur.fixed + Math.round((variable / elapsed) * days)) : null;
+
+  return {
+    month: from.slice(0, 7),
+    daysInMonth: days,
+    daysElapsed: elapsed,
+    isCurrent,
+    expense: euros(cur.expense),
+    fixed: euros(cur.fixed),
+    variable: euros(variable),
+    // percentuale intera delle uscite del mese che arriva dalle spese fisse (null senza uscite)
+    fixedShare: cur.expense > 0 ? Math.round((cur.fixed / cur.expense) * 100) : null,
+    avgPerDay: perDay(cur.expense, elapsed),
+    avgPerDayVariable: perDay(variable, elapsed),
+    projection,
+    ...peaks,
+    prev: {
+      month: win.prev_from.slice(0, 7),
+      expense: euros(prev.expense),
+      fixed: euros(prev.fixed),
+      variable: euros(prevVariable),
+      fixedShare: prev.expense > 0 ? Math.round((prev.fixed / prev.expense) * 100) : null,
+      avgPerDay: perDay(prev.expense, prevDays),
+      avgPerDayVariable: perDay(prevVariable, prevDays),
+    },
+  };
+}
+
 router.get(
   '/overview',
   handler(async (req, res) => {
@@ -178,7 +290,9 @@ router.get(
          date_trunc('week', $1::date)::date                   AS week_from,
          (date_trunc('week', $1::date) + interval '6 day')::date AS week_to,
          date_trunc('month', $1::date)::date                  AS month_from,
-         (date_trunc('month', $1::date) + interval '1 month - 1 day')::date AS month_to`,
+         (date_trunc('month', $1::date) + interval '1 month - 1 day')::date AS month_to,
+         (date_trunc('month', $1::date) - interval '1 month')::date AS prev_from,
+         (date_trunc('month', $1::date) - interval '1 day')::date AS prev_to`,
       [a]
     );
     const win = w.rows[0];
@@ -190,13 +304,14 @@ router.get(
       totals(req.user.id, d(win.month_from), d(win.month_to), scope),
     ]);
 
-    const [expenseByCategory, incomeByCategory, expenseByAccount, split, prevAvgMap] =
+    const [expenseByCategory, incomeByCategory, expenseByAccount, split, prevAvgMap, insights] =
       await Promise.all([
         byCategory(req.user.id, month.from, month.to, 'expense', scope),
         byCategory(req.user.id, month.from, month.to, 'income', scope),
         byAccount(req.user.id, month.from, month.to, 'expense', scope),
         scopeSplit(req.user.id, month.from, month.to),
         prevMonthsAvgByCategory(req.user.id, month.from, 3, scope),
+        monthInsights(req.user.id, { month_from: d(win.month_from), month_to: d(win.month_to), prev_from: d(win.prev_from), prev_to: d(win.prev_to) }, scope),
       ]);
 
     // Attach the 3-month average so the dashboard can show a "vs media" delta.
@@ -255,6 +370,7 @@ router.get(
       week,
       month,
       scopeSplit: split,
+      insights,
       expenseByCategory,
       incomeByCategory,
       expenseByAccount,

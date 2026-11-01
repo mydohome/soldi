@@ -362,6 +362,13 @@ async function viewDashboard(main) {
         }))
       : data.dailyTrend.map((d) => ({ label: dtfShort.format(parseISO(d.date)).replace('.', ''), income: d.income, expense: d.expense }));
 
+  // Totali per le quote percentuali e media delle uscite per la linea tratteggiata del grafico: nei mesi
+  // si contano solo quelli con movimenti (un mese senza dati non è un mese a spesa zero), nei giorni tutti.
+  const catTotal = data.expenseByCategory.reduce((s, c) => s + c.total, 0);
+  const accTotal = (data.expenseByAccount || []).reduce((s, x) => s + (x.total > 0 ? x.total : 0), 0);
+  const trendPts = p === 'month' ? trend.filter((t) => t.income > 0 || t.expense > 0) : trend;
+  const trendAvg = trendPts.length ? trendPts.reduce((s, t) => s + t.expense, 0) / trendPts.length : null;
+
   main.innerHTML = '';
   main.appendChild(
     h(`
@@ -434,7 +441,7 @@ async function viewDashboard(main) {
                         (c) =>
                           `<div class="row"><span class="dot" style="background:${c.color}"></span>${escapeHtml(
                             c.name
-                          )}${categoryDelta(c)}<span class="amt">${fmtEur(c.total)}</span></div>`
+                          )}${categoryDelta(c)}<span class="amt">${shareChip(c.total, catTotal)}${fmtEur(c.total)}</span></div>`
                       )
                       .join('')
                   : '<span class="muted">Aggiungi una spesa per vedere la ripartizione.</span>'
@@ -445,7 +452,9 @@ async function viewDashboard(main) {
         <div class="card card-pad chart-card">
           <h3>Andamento</h3>
           <p class="hint">${p === 'month' ? 'Ultimi 6 mesi' : 'Ultimi 30 giorni'} · <span style="color:var(--income)">entrate</span> / <span style="color:var(--expense)">uscite</span></p>
-          ${bars(trend)}
+          ${insightTiles(data.insights, data.month)}
+          ${bars(trend, { avgExpense: trendAvg })}
+          ${fixedShareBlock(data.insights)}
         </div>
       </div>
 
@@ -467,7 +476,7 @@ async function viewDashboard(main) {
                       (x) =>
                         `<div class="row"><span class="dot" style="background:${x.color}"></span>${escapeHtml(
                           x.name
-                        )}<span class="amt">${fmtEur(x.total)}</span></div>`
+                        )}<span class="amt">${shareChip(x.total, accTotal)}${fmtEur(x.total)}</span></div>`
                     )
                     .join('')
                 : '<span class="muted">Assegna un conto ai movimenti per vedere questa ripartizione.</span>'
@@ -2236,6 +2245,123 @@ function statSplit(block, key) {
     <span>${icons.person}${fmtEur(p)}</span>
     <span>${icons.home}${fmtEur(hh)}</span>
   </span>`;
+}
+
+// Quota percentuale di una voce sul totale («<1%» sotto l'uno per cento).
+function shareChip(value, total) {
+  if (!(total > 0) || !(value > 0)) return '';
+  const pct = (value / total) * 100;
+  return `<span class="share">${pct < 1 ? '<1' : Math.round(pct)}%</span>`;
+}
+
+// Freccia di variazione rispetto al mese scorso: spendere di più = rosso, di meno = verde.
+function deltaChip(current, previous, title) {
+  if (current == null || previous == null || previous < 0.5) return '';
+  const raw = Math.round(((current - previous) / previous) * 100);
+  const t = ` title="${escapeHtml(title)}"`;
+  if (Math.abs(raw) < 3) return `<span class="ins-delta flat"${t}>≈</span>`;
+  return `<span class="ins-delta ${raw > 0 ? 'up' : 'down'}"${t}>${raw > 0 ? '▲' : '▼'} ${Math.min(Math.abs(raw), 999)}%</span>`;
+}
+
+const dmShort = (iso) => `${iso.slice(8, 10)}/${iso.slice(5, 7)}`;
+
+// Tre indicatori delle uscite del mese dell'ancora: media al giorno (con e senza spese fisse), picco e
+// stima di fine mese (o, per un mese chiuso, quanto è rimasto delle entrate).
+function insightTiles(ins, month) {
+  if (!ins) return '';
+  const monthName = capitalize(dtfMonth.format(parseISO(state.anchor)));
+  // Con pochi giorni la media oscilla troppo: il confronto col mese scorso compare dal 5° giorno.
+  const comparable = !ins.isCurrent || ins.daysElapsed >= 5;
+  const prevMonthName = ins.prev ? dtfMonth.format(parseISO(`${ins.prev.month}-01`)).split(' ')[0] : '';
+
+  // Nei primi giorni del mese la media non significa nulla (un solo giorno = quel giorno): si mostra
+  // quella del mese scorso finché non ci sono almeno 3 giorni di dati.
+  const tooEarly = ins.isCurrent && ins.daysElapsed < 3 && ins.prev && ins.prev.avgPerDay != null;
+  const avg = tooEarly
+    ? `
+    <div class="ins-tile">
+      <span class="ins-label">Media al giorno</span>
+      <span class="ins-value">—</span>
+      <span class="ins-sub">troppo presto: ${ins.daysElapsed === 1 ? '1 solo giorno' : `${ins.daysElapsed} giorni`} di dati</span>
+      <span class="ins-sub">${escapeHtml(prevMonthName)}: <strong>${fmtEur(ins.prev.avgPerDay)}</strong> · senza fisse <strong>${fmtEur(ins.prev.avgPerDayVariable)}</strong></span>
+    </div>`
+    : `
+    <div class="ins-tile">
+      <span class="ins-label">Media al giorno</span>
+      <span class="ins-value">${ins.avgPerDay == null ? '—' : fmtEur(ins.avgPerDay)}${
+        comparable ? deltaChip(ins.avgPerDay, ins.prev.avgPerDay, `vs ${prevMonthName} (${fmtEur(ins.prev.avgPerDay)}/giorno)`) : ''
+      }</span>
+      <span class="ins-sub">${
+        ins.avgPerDayVariable == null
+          ? 'nessun dato'
+          : `senza fisse <strong>${fmtEur(ins.avgPerDayVariable)}</strong>${
+              comparable ? deltaChip(ins.avgPerDayVariable, ins.prev.avgPerDayVariable, `senza fisse, vs ${prevMonthName} (${fmtEur(ins.prev.avgPerDayVariable)}/giorno)`) : ''
+            }`
+      }</span>
+    </div>`;
+
+  const peak = ins.peak
+    ? `
+    <div class="ins-tile">
+      <span class="ins-label">Picco di spesa</span>
+      <span class="ins-value">${fmtEur(ins.peak.amount)}</span>
+      <span class="ins-sub">${escapeHtml(ins.peak.category || ins.peak.note || 'Spesa')} · ${dmShort(ins.peak.date)}</span>
+      ${
+        ins.peakDay
+          ? `<span class="ins-sub">giorno più caro <strong>${dmShort(ins.peakDay.date)}</strong> · ${fmtEur(ins.peakDay.amount)}</span>`
+          : ''
+      }
+    </div>`
+    : `
+    <div class="ins-tile">
+      <span class="ins-label">Picco di spesa</span>
+      <span class="ins-value">—</span>
+      <span class="ins-sub">nessuna spesa variabile</span>
+    </div>`;
+
+  const third =
+    ins.projection != null
+      ? `
+    <div class="ins-tile">
+      <span class="ins-label">Stima a fine mese</span>
+      <span class="ins-value">${fmtEur(ins.projection)}${deltaChip(ins.projection, ins.prev.expense, `vs ${prevMonthName} (${fmtEur(ins.prev.expense)})`)}</span>
+      <span class="ins-sub">fisse registrate + variabili alla media</span>
+    </div>`
+      : (() => {
+          const inc = month?.income || 0;
+          const net = month?.net || 0;
+          return `
+    <div class="ins-tile">
+      <span class="ins-label">Risparmio del mese</span>
+      <span class="ins-value ${net >= 0 ? 'pos' : 'neg'}">${fmtEur(net)}</span>
+      <span class="ins-sub">${inc > 0 ? `<strong>${Math.round((net / inc) * 100)}%</strong> delle entrate` : 'nessuna entrata'}</span>
+    </div>`;
+        })();
+
+  return `
+    <div class="ins-caption">${escapeHtml(monthName)}</div>
+    <div class="ins-grid">${avg}${peak}${third}</div>`;
+}
+
+// Quanto pesano le spese fisse sulle uscite del mese (barra fisse / variabili).
+function fixedShareBlock(ins) {
+  if (!ins || !(ins.expense > 0)) return '';
+  const pct = ins.fixedShare ?? 0;
+  const prev = ins.prev?.fixedShare;
+  const prevName = ins.prev ? dtfMonth.format(parseISO(`${ins.prev.month}-01`)).split(' ')[0] : '';
+  return `
+    <div class="fixed-share">
+      <div class="fs-head"><span>Peso delle spese fisse sulle uscite</span><strong>${pct}%</strong></div>
+      <div class="split-bar" role="img" aria-label="Spese fisse ${fmtEur(ins.fixed)}, variabili ${fmtEur(ins.variable)}">
+        <span style="width:${pct}%;background:var(--warn)"></span>
+        <span style="width:${100 - pct}%;background:var(--brand)"></span>
+      </div>
+      <div class="fs-legend">
+        <span><i style="background:var(--warn)"></i>Fisse ${fmtEur(ins.fixed)}</span>
+        <span><i style="background:var(--brand)"></i>Variabili ${fmtEur(ins.variable)}</span>
+        ${prev != null ? `<span class="fs-prev">${escapeHtml(prevName)}: ${prev}%</span>` : ''}
+      </div>
+    </div>`;
 }
 
 function scopeSplitBlock(split) {

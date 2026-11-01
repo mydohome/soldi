@@ -1120,3 +1120,33 @@ code.block {
 .inst-edit-row.paid .inst-num { background: color-mix(in srgb, var(--income) 18%, transparent); color: var(--income); }
 .inst-edit-row .inst-num svg { width: 14px; height: 14px; }
 #add-row { margin-top: 6px; }
+
+/* ---------- Dashboard: indicatori del mese e peso delle spese fisse ---------- */
+.legend .amt { display: inline-flex; align-items: baseline; gap: 10px; white-space: nowrap; }
+.legend .share { font-size: 0.74rem; color: var(--ink-faint); font-variant-numeric: tabular-nums; min-width: 2.4em; text-align: right; }
+
+.ins-caption { font-size: 0.74rem; font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase; color: var(--ink-faint); margin: 2px 0 8px; }
+.ins-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(112px, 1fr)); gap: 8px; margin-bottom: 14px; }
+.ins-tile {
+  display: flex; flex-direction: column; gap: 3px; min-width: 0;
+  padding: 10px 11px; border-radius: var(--radius-sm);
+  background: var(--bg-sunken); border: 1px solid var(--line);
+}
+.ins-label { font-size: 0.72rem; font-weight: 600; color: var(--ink-faint); }
+.ins-value { display: flex; align-items: baseline; flex-wrap: wrap; gap: 2px 6px; font-size: 1.05rem; font-weight: 700; letter-spacing: -0.01em; font-variant-numeric: tabular-nums; }
+.ins-value.pos { color: var(--income); }
+.ins-value.neg { color: var(--expense); }
+.ins-sub { font-size: 0.76rem; color: var(--ink-soft); line-height: 1.35; overflow-wrap: anywhere; }
+.ins-sub strong { color: var(--ink); font-weight: 600; font-variant-numeric: tabular-nums; }
+.ins-delta { font-size: 0.7rem; font-weight: 700; white-space: nowrap; margin-left: 6px; }
+.ins-value .ins-delta { margin-left: 0; }
+.ins-delta.up { color: var(--expense); }
+.ins-delta.down { color: var(--income); }
+.ins-delta.flat { color: var(--ink-faint); }
+
+.fixed-share { margin-top: 16px; padding-top: 14px; border-top: 1px solid var(--line); }
+.fs-head { display: flex; justify-content: space-between; align-items: baseline; gap: 10px; font-size: 0.82rem; color: var(--ink-soft); margin-bottom: 8px; }
+.fs-head strong { font-size: 1rem; color: var(--ink); font-variant-numeric: tabular-nums; }
+.fs-legend { display: flex; flex-wrap: wrap; gap: 4px 14px; margin-top: 8px; font-size: 0.8rem; color: var(--ink-soft); font-variant-numeric: tabular-nums; }
+.fs-legend i { display: inline-block; width: 9px; height: 9px; border-radius: 3px; margin-right: 6px; vertical-align: 0; }
+.fs-legend .fs-prev { margin-left: auto; color: var(--ink-faint); }
