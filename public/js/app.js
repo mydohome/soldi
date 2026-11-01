@@ -365,6 +365,14 @@ async function viewDashboard(main) {
   // Totali per le quote percentuali e media delle uscite per la linea tratteggiata del grafico: nei mesi
   // si contano solo quelli con movimenti (un mese senza dati non è un mese a spesa zero), nei giorni tutti.
   const catTotal = data.expenseByCategory.reduce((s, c) => s + c.total, 0);
+  // Elenco breve: le prime categorie e una voce «Altre» con la somma delle restanti, cliccabile per il
+  // dettaglio. Con una sola categoria in coda la voce «Altre» non avrebbe senso: si mostra direttamente.
+  const CAT_TOP = 6;
+  const catShown = data.expenseByCategory.length > CAT_TOP + 1 ? data.expenseByCategory.slice(0, CAT_TOP) : data.expenseByCategory;
+  const catRest = data.expenseByCategory.slice(catShown.length);
+  const catRestTotal = catRest.reduce((s, c) => s + c.total, 0);
+  const catRow = (c) =>
+    `<div class="row"><span class="dot" style="background:${c.color}"></span>${escapeHtml(c.name)}${categoryDelta(c)}<span class="amt">${shareChip(c.total, catTotal)}${fmtEur(c.total)}</span></div>`;
   const accTotal = (data.expenseByAccount || []).reduce((s, x) => s + (x.total > 0 ? x.total : 0), 0);
   const trendPts = p === 'month' ? trend.filter((t) => t.income > 0 || t.expense > 0) : trend;
   const trendAvg = trendPts.length ? trendPts.reduce((s, t) => s + t.expense, 0) / trendPts.length : null;
@@ -435,15 +443,13 @@ async function viewDashboard(main) {
             <div class="legend">
               ${
                 data.expenseByCategory.length
-                  ? data.expenseByCategory
-                      .slice(0, 6)
-                      .map(
-                        (c) =>
-                          `<div class="row"><span class="dot" style="background:${c.color}"></span>${escapeHtml(
-                            c.name
-                          )}${categoryDelta(c)}<span class="amt">${shareChip(c.total, catTotal)}${fmtEur(c.total)}</span></div>`
-                      )
-                      .join('')
+                  ? catShown.map(catRow).join('') +
+                    (catRest.length
+                      ? `<button type="button" class="row row-btn" id="cat-others" aria-label="Dettaglio delle altre ${catRest.length} categorie">
+                           <span class="dot" style="background:var(--ink-faint)"></span>Altre (${catRest.length})${icons.chevronR}
+                           <span class="amt">${shareChip(catRestTotal, catTotal)}${fmtEur(catRestTotal)}</span>
+                         </button>`
+                      : '')
                   : '<span class="muted">Aggiungi una spesa per vedere la ripartizione.</span>'
               }
             </div>
@@ -518,6 +524,14 @@ async function viewDashboard(main) {
     }
   });
   payments.bindDueCard(main, () => viewDashboard(main));
+  main.querySelector('#cat-others')?.addEventListener('click', () => {
+    const { close } = modal(`
+      <h2>Altre categorie</h2>
+      <p class="muted" style="margin:-8px 0 14px">${escapeHtml(capitalize(dtfMonth.format(parseISO(state.anchor))))} · ${catRest.length} categorie · <strong>${fmtEur(catRestTotal)}</strong> (${shareChip(catRestTotal, catTotal).replace(/<[^>]+>/g, '')} delle uscite)</p>
+      <div class="legend others-list">${catRest.map(catRow).join('')}</div>
+      <div class="modal-actions"><button type="button" class="btn ghost" id="others-close">Chiudi</button></div>`);
+    document.getElementById('others-close').addEventListener('click', close);
+  });
   main.querySelector('#prev').addEventListener('click', () => {
     state.anchor = shiftPeriod(state.period, state.anchor, -1);
     viewDashboard(main);

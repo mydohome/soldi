@@ -1150,3 +1150,13 @@ code.block {
 .fs-legend { display: flex; flex-wrap: wrap; gap: 4px 14px; margin-top: 8px; font-size: 0.8rem; color: var(--ink-soft); font-variant-numeric: tabular-nums; }
 .fs-legend i { display: inline-block; width: 9px; height: 9px; border-radius: 3px; margin-right: 6px; vertical-align: 0; }
 .fs-legend .fs-prev { margin-left: auto; color: var(--ink-faint); }
+
+/* Voce «Altre» della legenda per categoria: cliccabile, apre il dettaglio delle categorie piccole. */
+.legend .row-btn {
+  background: none; border: none; padding: 0; width: 100%; color: inherit; font: inherit; font-size: 0.88rem;
+  text-align: left; cursor: pointer; -webkit-tap-highlight-color: transparent;
+}
+.legend .row-btn svg { width: 14px; height: 14px; color: var(--ink-faint); flex: none; margin-left: -4px; }
+.legend .row-btn:hover { color: var(--brand); }
+.legend .row-btn:focus-visible { outline: 2px solid var(--brand); outline-offset: 3px; border-radius: 6px; }
+.others-list { max-height: 55vh; overflow-y: auto; }
