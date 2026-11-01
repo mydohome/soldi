@@ -2,7 +2,7 @@
 
 Scopo: ripartire in una nuova chat **senza rileggere tutto il repository**. Questo file dice che cosa
 esiste, come si lavora, dove sta ogni cosa e che cosa resta da fare. Aggiornato al 2026-11-01
-(`main` = commit della PR #69, PR #71 aperta).
+(`main` include le PR fino alla #71; nessuna PR di funzionalità aperta).
 
 **Regola per risparmiare token:** leggi questo file, poi apri **solo** i file della funzione che tocchi
 (mappa al §4). Non leggere per intero `README.md` (~45 KB), `docs/OPERATIONS.md` o
@@ -138,7 +138,7 @@ Da fare (non urgente, in ordine di valore):
 
 ## 8. Backlog e PR aperte
 
-- **PR #71** (aperta): dashboard, «Spese per categoria» con elenco breve + voce «Altre» cliccabile.
+- Ultima funzione unita: #71 (dashboard, «Spese per categoria» con elenco breve + voce «Altre» cliccabile).
 - Dependabot, da valutare una per una (non unire alla cieca): #63 `node` 24→26, #53 `postgres` 16→18
   (**cambio di versione maggiore del database: richiede dump/ripristino, non basta riavviare**),
   #57 `csv-parse` 7 e #59 `node-cron` 4 (cambi maggiori), #55 `helmet` 8, #70 `dotenv` 18, #56
