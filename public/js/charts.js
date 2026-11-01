@@ -55,12 +55,16 @@ export function donut(data, { size = 168, thickness = 26 } = {}) {
     </svg>`;
 }
 
+const fmtEur0 = (n) =>
+  new Intl.NumberFormat('it-IT', { style: 'currency', currency: 'EUR', maximumFractionDigits: 0 }).format(n || 0);
+
 /**
  * Grouped income/expense bars over time.
  * series: [{ label, income, expense }]
  */
-export function bars(series, { width = 640, height = 200 } = {}) {
-  const pad = { top: 12, right: 8, bottom: 26, left: 8 };
+export function bars(series, { width = 640, height = 200, avgExpense = null, labelMax = true } = {}) {
+  // più spazio in alto: serve per il valore sopra la barra più alta
+  const pad = { top: labelMax ? 24 : 12, right: 8, bottom: 26, left: 8 };
   const iw = width - pad.left - pad.right;
   const ih = height - pad.top - pad.bottom;
   const max = Math.max(1, ...series.map((d) => Math.max(d.income, d.expense)));
@@ -68,6 +72,7 @@ export function bars(series, { width = 640, height = 200 } = {}) {
   const slot = iw / n;
   const barW = Math.min(14, slot * 0.32);
   const gap = 3;
+  const maxExpenseIdx = labelMax ? series.reduce((best, d, i) => (d.expense > (series[best]?.expense ?? 0) ? i : best), -1) : -1;
 
   const cols = series
     .map((d, i) => {
@@ -75,8 +80,14 @@ export function bars(series, { width = 640, height = 200 } = {}) {
       const ih1 = (d.income / max) * ih;
       const eh1 = (d.expense / max) * ih;
       const showLabel = n <= 12 || i % Math.ceil(n / 12) === 0;
+      const valueLabel =
+        i === maxExpenseIdx && d.expense > 0
+          ? `<text x="${x + gap / 2 + barW / 2}" y="${Math.max(10, pad.top + ih - eh1 - 5)}" text-anchor="middle"
+                   fill="var(--expense)" font-size="10" font-weight="700">${fmtEur0(d.expense)}</text>`
+          : '';
       return `
         <g>
+          ${valueLabel}
           <rect x="${x - barW - gap / 2}" y="${pad.top + ih - ih1}" width="${barW}" height="${Math.max(0, ih1)}"
                 rx="3" fill="var(--income)"><title>${d.label}: entrate ${fmtEur(d.income)}</title></rect>
           <rect x="${x + gap / 2}" y="${pad.top + ih - eh1}" width="${barW}" height="${Math.max(0, eh1)}"
@@ -92,11 +103,22 @@ export function bars(series, { width = 640, height = 200 } = {}) {
     })
     .join('');
 
+  // Linea tratteggiata della media delle uscite: a colpo d'occhio quali barre stanno sopra o sotto.
+  let avgLine = '';
+  if (avgExpense != null && avgExpense > 0 && avgExpense <= max) {
+    const y = pad.top + ih - (avgExpense / max) * ih;
+    avgLine = `
+      <line x1="${pad.left}" y1="${y}" x2="${width - pad.right}" y2="${y}" stroke="var(--expense)"
+            stroke-width="1" stroke-dasharray="4 4" opacity="0.55"><title>Media uscite ${fmtEur(avgExpense)}</title></line>
+      <text x="${pad.left + 2}" y="${y - 4}" text-anchor="start" fill="var(--ink-faint)" font-size="9.5">media ${fmtEur0(avgExpense)}</text>`;
+  }
+
   return `
     <svg class="bars" viewBox="0 0 ${width} ${height}" preserveAspectRatio="xMidYMid meet"
          role="img" aria-label="Andamento entrate e uscite">
       <line x1="${pad.left}" y1="${pad.top + ih}" x2="${width - pad.right}" y2="${pad.top + ih}"
             stroke="var(--line)" stroke-width="1" />
+      ${avgLine}
       ${cols}
     </svg>`;
 }

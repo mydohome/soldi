@@ -52,6 +52,7 @@ Funziona da smartphone e da desktop (interfaccia responsive), gira interamente c
 | ♻️ **Ripristino** | Comando singolo che ricarica i dati da un backup CSV. |
 | 🎨 **UI** | Design moderno, tema chiaro/scuro automatico, elementi grafici originali. |
 | 🧾 **Pagamenti programmati** | Scheda **«Da pagare»** in Spese fisse: bollettini a scadenza definita pagati a mano (es. 14 rate del condominio). Crei il piano con le rate (importo per rata o totale da dividere, cadenza mensile o altra, ogni rata correggibile) e premi **«Paga»**: si crea il movimento e avanza la barra. All'apertura dell'app un **pop-up** segnala le rate scadute o in scadenza oggi e sparisce quando registri il pagamento; badge sul menu e card in Dashboard. |
+| 📈 **Indicatori della dashboard** | Nella card «Andamento»: **media al giorno** con e senza spese fisse (con confronto sul mese scorso), **picco di spesa** (la spesa non fissa più alta e il giorno più caro), **stima di fine mese** (o risparmio del mese se è chiuso), linea tratteggiata della media delle uscite nel grafico e **peso delle spese fisse** sulle uscite. Quote percentuali nelle card per categoria e per conto. |
 | 📖 **Guida in-app** | In **Impostazioni → Guida**: come aggiungere movimenti e gestire categorie, conti e spese fisse, con screenshot delle schermate. |
 
 ---
@@ -760,7 +761,7 @@ Tutte sotto `/api`, JSON, autenticazione via cookie di sessione.
 | `GET`  | `/api/planned/summary?year=YYYY&includeRecurring=true\|false&scope=` | Previsione annuale: totali, proiezione, budget mensile necessario, risparmio potenziale, per mese/categoria/ambito |
 | `GET`  | `/api/savings` | Piano di risparmio: entrate/uscite previste, margine, % consigliate per fondo sicurezza e fondo risparmio |
 | `PATCH`| `/api/savings` | Aggiorna `emergencyMonths` / `emergencySplit` |
-| `GET`  | `/api/summary/overview?anchor=YYYY-MM-DD&scope=personal\|home` | Riepiloghi giorno/settimana/mese, ripartizione per categoria (con media 3 mesi) e per conto, split Personale/Casa |
+| `GET`  | `/api/summary/overview?anchor=YYYY-MM-DD&scope=personal\|home` | Riepiloghi giorno/settimana/mese, ripartizione per categoria (con media 3 mesi) e per conto, split Personale/Casa e `insights` del mese (uscite totali/fisse/variabili, `fixedShare`, media al giorno con e senza fisse, picco e giorno più caro tra le spese non fisse, stima di fine mese, confronto col mese precedente) |
 | `GET`  | `/api/summary/range?from&to&group=day\|week\|month&scope=` | Serie temporale aggregata |
 | `GET`  | `/api/export/transactions` | Esporta i movimenti dell'utente: filtri come `/api/transactions` (`from`, `to`, `type`, `categoryId`, `accountId`, `scope`, `q`) + `format=xlsx`\|`csv`; max 50.000 righe, 6 richieste/minuto |
 | `GET`  | `/api/backups` | Elenco dei backup **dell'utente loggato** (mai il backup globale) |
