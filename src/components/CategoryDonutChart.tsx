@@ -80,83 +80,82 @@ export const CategoryDonutChart: React.FC<CategoryDonutChartProps> = ({
 
       <div className="grid grid-cols-1 md:grid-cols-12 gap-6 items-center">
         {/* Interactive SVG Donut */}
-        <div className="md:col-span-5 flex flex-col items-center justify-center relative">
-          <svg
-            viewBox={`0 0 ${size} ${size}`}
-            width={size}
-            height={size}
-            className="select-none transform -rotate-90"
-            role="img"
-            aria-label="Grafico a ciambella spese per categoria"
-          >
-            {/* Background ring */}
-            <circle
-              cx={cx}
-              cy={cy}
-              r={r}
-              fill="none"
-              stroke="currentColor"
-              className="text-[#eef0f7] dark:text-[#1e2236]"
-              strokeWidth={thickness}
-            />
-
-            {totalExpense === 0 ? (
-              <text
-                x={cx}
-                y={cy}
-                textAnchor="middle"
-                dominantBaseline="central"
-                className="fill-[#8a92a6] dark:fill-[#7b839a] text-xs transform rotate-90"
-                style={{ transformOrigin: `${cx}px ${cy}px` }}
-              >
-                Nessuna spesa
-              </text>
-            ) : (
-              slices.map((slice) => {
-                const isHovered = hoveredCatId === slice.categoryId;
-                const isSelected = selectedCategoryId === slice.categoryId;
-                const effectiveThickness = isHovered || isSelected ? thickness + 4 : thickness;
-
-                return (
-                  <circle
-                    key={slice.categoryId}
-                    cx={cx}
-                    cy={cy}
-                    r={r}
-                    fill="none"
-                    stroke={slice.color}
-                    strokeWidth={effectiveThickness}
-                    strokeDasharray={`${slice.dash} ${circ - slice.dash}`}
-                    strokeDashoffset={slice.strokeDashoffset}
-                    className="cursor-pointer transition-all duration-200 hover:opacity-90"
-                    onMouseEnter={() => setHoveredCatId(slice.categoryId)}
-                    onMouseLeave={() => setHoveredCatId(null)}
-                    onClick={() => onSelectCategory && onSelectCategory(slice.categoryId)}
-                  />
-                );
-              })
-            )}
-          </svg>
-
-          {/* Central Information Overlay (unrotated) */}
-          {totalExpense > 0 && (
-            <div
-              className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none text-center px-4"
-              style={{ width: size, height: size }}
+        <div className="md:col-span-5 flex justify-center items-center">
+          <div className="relative w-[190px] h-[190px] shrink-0 mx-auto flex items-center justify-center">
+            <svg
+              viewBox={`0 0 ${size} ${size}`}
+              width={size}
+              height={size}
+              className="select-none transform -rotate-90 block"
+              role="img"
+              aria-label="Grafico a ciambella spese per categoria"
             >
-              <span className="text-[10px] uppercase tracking-wider font-semibold text-[#8a92a6] dark:text-[#7b839a]">
-                {activeCategory ? activeCategory.name : 'USCITE MESE'}
-              </span>
-              <span className="text-base font-bold text-[#1c2030] dark:text-[#eef0f7] leading-tight mt-0.5">
-                {activeCategory ? fmtEur(activeCategory.total) : fmtEur(totalExpense)}
-              </span>
-              <span className="text-[11px] text-[#5b6478] dark:text-[#aab2c8] mt-0.5">
-                {activeCategory
-                  ? `${activeCategory.sharePercent}% del totale`
-                  : `${categoriesData.filter((c) => c.total > 0).length} categorie`}
-              </span>
-            </div>
-          )}
+              {/* Background ring */}
+              <circle
+                cx={cx}
+                cy={cy}
+                r={r}
+                fill="none"
+                stroke="currentColor"
+                className="text-[#eef0f7] dark:text-[#1e2236]"
+                strokeWidth={thickness}
+              />
+
+              {totalExpense === 0 ? (
+                <text
+                  x={cx}
+                  y={cy}
+                  textAnchor="middle"
+                  dominantBaseline="central"
+                  className="fill-[#8a92a6] dark:fill-[#7b839a] text-xs transform rotate-90"
+                  style={{ transformOrigin: `${cx}px ${cy}px` }}
+                >
+                  Nessuna spesa
+                </text>
+              ) : (
+                slices.map((slice) => {
+                  const isHovered = hoveredCatId === slice.categoryId;
+                  const isSelected = selectedCategoryId === slice.categoryId;
+                  const effectiveThickness = isHovered || isSelected ? thickness + 4 : thickness;
+
+                  return (
+                    <circle
+                      key={slice.categoryId}
+                      cx={cx}
+                      cy={cy}
+                      r={r}
+                      fill="none"
+                      stroke={slice.color}
+                      strokeWidth={effectiveThickness}
+                      strokeDasharray={`${slice.dash} ${circ - slice.dash}`}
+                      strokeDashoffset={slice.strokeDashoffset}
+                      className="cursor-pointer transition-all duration-200 hover:opacity-90"
+                      onMouseEnter={() => setHoveredCatId(slice.categoryId)}
+                      onMouseLeave={() => setHoveredCatId(null)}
+                      onClick={() => onSelectCategory && onSelectCategory(slice.categoryId)}
+                    />
+                  );
+                })
+              )}
+            </svg>
+
+            {/* Central Information Overlay perfectly centered */}
+            {totalExpense > 0 && (
+              <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none text-center px-2 select-none">
+                <span className="text-[10px] uppercase tracking-wider font-semibold text-[#8a92a6] dark:text-[#7b839a] truncate max-w-[125px]">
+                  {activeCategory ? activeCategory.name : 'USCITE MESE'}
+                </span>
+                <span className="text-sm sm:text-base font-bold text-[#1c2030] dark:text-[#eef0f7] leading-tight mt-0.5 truncate max-w-[130px]">
+                  {activeCategory ? fmtEur(activeCategory.total) : fmtEur(totalExpense)}
+                </span>
+                <span className="text-[10.5px] text-[#5b6478] dark:text-[#aab2c8] mt-0.5">
+                  {activeCategory
+                    ? `${activeCategory.sharePercent}% del totale`
+                    : `${categoriesData.filter((c) => c.total > 0).length} categorie`}
+                </span>
+              </div>
+            )}
+          </div>
         </div>
 
         {/* Categories Legend with Share & 3-month Delta */}
