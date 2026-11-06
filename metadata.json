@@ -1,0 +1,6 @@
+{
+  "name": "Soldi - Dashboard Spese Flash",
+  "description": "Dashboard rapida e interattiva per la webapp delle spese Soldi, con saldo attuale in tempo reale, grafici mensili interattivi e analisi spese.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
