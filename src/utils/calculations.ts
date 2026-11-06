@@ -344,10 +344,11 @@ export function calculateFlashInsights(
   const prevTotalExpenseCents = prevTxs.reduce((sum, t) => sum + t.amount_cents, 0);
   const dailyAvgPrevMonth = prevDays > 0 ? centsToEuros(prevTotalExpenseCents) / prevDays : 0;
 
-  // Highest single expense
+  // Highest single expense (escludendo le spese fisse, come da HANDOVER.md)
   let highestExpenseItem: FlashInsights['highestExpense'] = null;
-  if (monthTxs.length > 0) {
-    const highest = [...monthTxs].sort((a, b) => b.amount_cents - a.amount_cents)[0];
+  const nonFixedMonthTxs = monthTxs.filter((t) => !t.isFixed);
+  if (nonFixedMonthTxs.length > 0) {
+    const highest = [...nonFixedMonthTxs].sort((a, b) => b.amount_cents - a.amount_cents)[0];
     highestExpenseItem = {
       amount: centsToEuros(highest.amount_cents),
       note: highest.note || 'Spesa generica',
@@ -356,9 +357,9 @@ export function calculateFlashInsights(
     };
   }
 
-  // Highest spend day
+  // Highest spend day (escludendo spese fisse)
   const dayTotals = new Map<string, number>();
-  for (const t of monthTxs) {
+  for (const t of nonFixedMonthTxs) {
     dayTotals.set(t.occurred_on, (dayTotals.get(t.occurred_on) || 0) + t.amount_cents);
   }
 
@@ -374,8 +375,8 @@ export function calculateFlashInsights(
     }
   }
 
-  // Projected month end expense: fixed + (daily non-fixed avg * daysInMonth)
-  const projectedMonthEndExpense = isCurrentMonth
+  // Projected month end expense: da HANDOVER.md la stima parte dal 5° giorno
+  const projectedMonthEndExpense = isCurrentMonth && daysElapsed >= 5
     ? centsToEuros(fixedExpenseCents) + dailyAvgExcludingFixed * daysInMonth
     : centsToEuros(totalExpenseCents);
 
