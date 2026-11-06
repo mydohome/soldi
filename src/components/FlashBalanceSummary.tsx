@@ -28,7 +28,7 @@ interface FlashBalanceSummaryProps {
   selectedAccountId: string | null;
   onSelectAccount: (accountId: string | null) => void;
   onOpenQuickAdd: () => void;
-  onOpenTxList: () => void;
+  onOpenTxList: (type?: 'income' | 'expense' | 'all') => void;
 }
 
 export const FlashBalanceSummary: React.FC<FlashBalanceSummaryProps> = ({
@@ -46,6 +46,15 @@ export const FlashBalanceSummary: React.FC<FlashBalanceSummaryProps> = ({
   onOpenTxList,
 }) => {
   const periodLabel = period === 'day' ? 'del giorno' : period === 'week' ? 'della settimana' : 'del mese';
+
+  // Liquidità immediata spendibile vs Risparmi accantonati
+  const liquidBalance = accounts
+    .filter((a) => a.kind !== 'savings')
+    .reduce((s, a) => s + a.currentBalance, 0);
+
+  const savingsBalance = accounts
+    .filter((a) => a.kind === 'savings')
+    .reduce((s, a) => s + a.currentBalance, 0);
 
   // Helper to pick account icon
   const getAccountIcon = (kind: Account['kind']) => {
@@ -107,17 +116,35 @@ export const FlashBalanceSummary: React.FC<FlashBalanceSummaryProps> = ({
               </span>
             </div>
 
-            <div className="flex flex-wrap items-center gap-4 mt-3 text-xs text-white/85">
-              <div className="flex items-center gap-1.5 bg-black/15 px-3 py-1 rounded-full">
+            <div className="flex flex-wrap items-center gap-3 mt-3 text-xs text-white/85">
+              <button
+                type="button"
+                onClick={() => onOpenTxList('income')}
+                className="flex items-center gap-1.5 bg-black/15 hover:bg-black/25 active:scale-95 px-3 py-1 rounded-full transition-all cursor-pointer"
+                title="Visualizza entrate"
+              >
                 <ArrowUpRight className="w-3.5 h-3.5 text-emerald-300" />
                 <span>Entrate: <strong>{fmtEur(periodIncome)}</strong></span>
-              </div>
-              <div className="flex items-center gap-1.5 bg-black/15 px-3 py-1 rounded-full">
+              </button>
+
+              <button
+                type="button"
+                onClick={() => onOpenTxList('expense')}
+                className="flex items-center gap-1.5 bg-black/15 hover:bg-black/25 active:scale-95 px-3 py-1 rounded-full transition-all cursor-pointer"
+                title="Visualizza uscite"
+              >
                 <ArrowDownRight className="w-3.5 h-3.5 text-rose-300" />
                 <span>Uscite: <strong>{fmtEur(periodExpense)}</strong></span>
-              </div>
-              <div className="hidden sm:flex items-center gap-1.5 text-white/70">
-                <span>Tasso risparmio: <strong className="text-white">{insights.savingsRate}%</strong></span>
+              </button>
+
+              <div className="flex items-center gap-2 text-white/75 text-[11px] bg-black/10 px-2.5 py-1 rounded-full">
+                <span>Liquidità: <strong className="text-white">{fmtEur(liquidBalance)}</strong></span>
+                {savingsBalance > 0 && (
+                  <>
+                    <span>·</span>
+                    <span>Risparmio: <strong className="text-white">{fmtEur(savingsBalance)}</strong></span>
+                  </>
+                )}
               </div>
             </div>
           </div>
@@ -134,7 +161,7 @@ export const FlashBalanceSummary: React.FC<FlashBalanceSummaryProps> = ({
             </button>
             <button
               type="button"
-              onClick={onOpenTxList}
+              onClick={() => onOpenTxList('all')}
               className="flex items-center gap-1.5 bg-white/15 hover:bg-white/25 active:scale-95 text-white font-medium text-xs sm:text-sm px-3.5 py-2.5 rounded-2xl transition-all cursor-pointer border border-white/20"
             >
               <span>Vedi Lista</span>

@@ -21,6 +21,7 @@ interface TransactionListModalProps {
   accounts: Account[];
   onDeleteTransaction: (id: string) => void;
   initialCategoryId?: string | null;
+  initialType?: TransactionType | 'all';
   periodLabel: string;
 }
 
@@ -32,11 +33,19 @@ export const TransactionListModal: React.FC<TransactionListModalProps> = ({
   accounts,
   onDeleteTransaction,
   initialCategoryId,
+  initialType = 'all',
   periodLabel,
 }) => {
   const [searchTerm, setSearchTerm] = useState('');
-  const [typeFilter, setTypeFilter] = useState<TransactionType | 'all'>('all');
+  const [typeFilter, setTypeFilter] = useState<TransactionType | 'all'>(initialType);
   const [selectedCatId, setSelectedCatId] = useState<string | null>(initialCategoryId || null);
+
+  React.useEffect(() => {
+    if (isOpen) {
+      setTypeFilter(initialType);
+      setSelectedCatId(initialCategoryId || null);
+    }
+  }, [isOpen, initialType, initialCategoryId]);
 
   if (!isOpen) return null;
 

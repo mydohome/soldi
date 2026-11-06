@@ -227,26 +227,34 @@ export const CategoryDonutChart: React.FC<CategoryDonutChartProps> = ({
         <div className="flex justify-between items-center text-xs text-[#5b6478] dark:text-[#aab2c8] mb-1.5">
           <div className="flex items-center gap-1.5">
             <span className="w-2 h-2 rounded-full bg-[#5566ff]" />
-            <span>Personale: <strong className="text-[#1c2030] dark:text-[#eef0f7]">{fmtEur(personalExpense)}</strong> ({personalPct}%)</span>
+            <span>Personale: <strong className="text-[#1c2030] dark:text-[#eef0f7]">{fmtEur(personalExpense)}</strong> {totalScopeExp > 0 ? `(${personalPct}%)` : ''}</span>
           </div>
           <div className="flex items-center gap-1.5">
             <span className="w-2 h-2 rounded-full bg-[#f4a259]" />
-            <span>Casa: <strong className="text-[#1c2030] dark:text-[#eef0f7]">{fmtEur(homeExpense)}</strong> ({homePct}%)</span>
+            <span>Casa: <strong className="text-[#1c2030] dark:text-[#eef0f7]">{fmtEur(homeExpense)}</strong> {totalScopeExp > 0 ? `(${homePct}%)` : ''}</span>
           </div>
         </div>
 
-        <div className="w-full h-2.5 bg-[#eef0f7] dark:bg-[#1e2236] rounded-full overflow-hidden flex">
-          <div
-            className="h-full bg-[#5566ff] transition-all duration-500"
-            style={{ width: `${personalPct}%` }}
-            title={`Personale: ${personalPct}%`}
-          />
-          <div
-            className="h-full bg-[#f4a259] transition-all duration-500"
-            style={{ width: `${homePct}%` }}
-            title={`Casa: ${homePct}%`}
-          />
-        </div>
+        {totalScopeExp === 0 ? (
+          <div className="w-full h-2 bg-[#eef0f7] dark:bg-[#1e2236] rounded-full" />
+        ) : (
+          <div className="w-full h-2.5 bg-[#eef0f7] dark:bg-[#1e2236] rounded-full overflow-hidden flex">
+            {personalPct > 0 && (
+              <div
+                className="h-full bg-[#5566ff] transition-all duration-500"
+                style={{ width: `${personalPct}%` }}
+                title={`Personale: ${personalPct}%`}
+              />
+            )}
+            {homePct > 0 && (
+              <div
+                className="h-full bg-[#f4a259] transition-all duration-500"
+                style={{ width: `${homePct}%` }}
+                title={`Casa: ${homePct}%`}
+              />
+            )}
+          </div>
+        )}
       </div>
     </div>
   );

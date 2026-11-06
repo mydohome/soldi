@@ -22,7 +22,7 @@ import { FlashQuickAddModal } from './components/FlashQuickAddModal';
 import { Header } from './components/Header';
 import { MonthlyTrendChart } from './components/MonthlyTrendChart';
 import { TransactionListModal } from './components/TransactionListModal';
-import { Account, Category, PaymentInstallment, PeriodType, Transaction, TransactionScope } from './types';
+import { Account, Category, PaymentInstallment, PeriodType, Transaction, TransactionScope, TransactionType } from './types';
 import {
   calculateFlashInsights,
   calculatePeriodSummary,
@@ -70,6 +70,7 @@ export default function App() {
   // Modal controls
   const [isQuickAddOpen, setIsQuickAddOpen] = useState(false);
   const [isTxListOpen, setIsTxListOpen] = useState(false);
+  const [txListFilterType, setTxListFilterType] = useState<TransactionType | 'all'>('all');
   const [isDataModalOpen, setIsDataModalOpen] = useState(false);
 
   // Toast & Undo
@@ -99,6 +100,37 @@ export default function App() {
   const handleToggleTheme = () => {
     setTheme((prev) => (prev === 'dark' ? 'light' : 'dark'));
   };
+
+  // Keyboard shortcuts (N = nuovo movimento, T = oggi, <-/-> = naviga periodo, Esc = chiudi)
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      const target = e.target as HTMLElement | null;
+      if (target && (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.tagName === 'SELECT')) {
+        return;
+      }
+
+      if (e.key === 'n' || e.key === 'N') {
+        e.preventDefault();
+        setIsQuickAddOpen(true);
+      } else if (e.key === 't' || e.key === 'T') {
+        e.preventDefault();
+        setAnchorDate(new Date().toISOString().slice(0, 10));
+      } else if (e.key === 'ArrowLeft') {
+        e.preventDefault();
+        handlePrevPeriod();
+      } else if (e.key === 'ArrowRight') {
+        e.preventDefault();
+        handleNextPeriod();
+      } else if (e.key === 'Escape') {
+        setIsQuickAddOpen(false);
+        setIsTxListOpen(false);
+        setIsDataModalOpen(false);
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  });
 
   // Date range calculation for current period & anchor
   const dateRange = useMemo(() => {
@@ -311,7 +343,10 @@ export default function App() {
           selectedAccountId={selectedAccountId}
           onSelectAccount={setSelectedAccountId}
           onOpenQuickAdd={() => setIsQuickAddOpen(true)}
-          onOpenTxList={() => setIsTxListOpen(true)}
+          onOpenTxList={(t = 'all') => {
+            setTxListFilterType(t);
+            setIsTxListOpen(true);
+          }}
         />
 
         {/* Interactive Charts Grid */}
@@ -482,6 +517,7 @@ export default function App() {
         onClose={() => setIsQuickAddOpen(false)}
         categories={categories}
         accounts={accounts}
+        transactions={transactions}
         onAddTransaction={handleAddTransaction}
         defaultScope={scope}
       />
@@ -491,12 +527,14 @@ export default function App() {
         onClose={() => {
           setIsTxListOpen(false);
           setSelectedCategoryId(null);
+          setTxListFilterType('all');
         }}
         transactions={periodTransactions}
         categories={categories}
         accounts={accounts}
         onDeleteTransaction={handleDeleteTransaction}
         initialCategoryId={selectedCategoryId}
+        initialType={txListFilterType}
         periodLabel={dateRange.label}
       />
 
