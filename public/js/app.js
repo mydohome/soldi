@@ -10,6 +10,7 @@ const state = {
   anchor: today(),
   period: 'month',
   scope: '',
+  dashUI: localStorage.getItem('soldi_dash_ui') || 'g-flash',
   forecastYear: new Date().getUTCFullYear(),
   forecastIncludeRec: true,
 };
@@ -373,8 +374,8 @@ async function viewDashboard(main) {
     main.innerHTML = `<div class="empty">Errore nel caricamento: ${escapeHtml(e.message)}</div>`;
     return;
   }
-
   await payments.refreshDue();
+
   const p = state.period;
   const block = p === 'day' ? data.day : p === 'week' ? data.week : data.month;
   const trend =
@@ -385,31 +386,161 @@ async function viewDashboard(main) {
           expense: m.expense,
           month: m.month,
         }))
-      : data.dailyTrend.map((d) => ({ label: dtfShort.format(parseISO(d.date)).replace('.', ''), income: d.income, expense: d.expense }));
+      : data.dailyTrend.map((d) => ({
+          label: dtfShort.format(parseISO(d.date)).replace('.', ''),
+          income: d.income,
+          expense: d.expense,
+        }));
 
-  // Totali per le quote percentuali e media delle uscite per la linea tratteggiata del grafico: nei mesi
-  // si contano solo quelli con movimenti (un mese senza dati non è un mese a spesa zero), nei giorni tutti.
   const catTotal = data.expenseByCategory.reduce((s, c) => s + c.total, 0);
-  // Elenco breve: le prime categorie e una voce «Altre» con la somma delle restanti, cliccabile per il
-  // dettaglio. Con una sola categoria in coda la voce «Altre» non avrebbe senso: si mostra direttamente.
   const CAT_TOP = 6;
   const catShown = data.expenseByCategory.length > CAT_TOP + 1 ? data.expenseByCategory.slice(0, CAT_TOP) : data.expenseByCategory;
   const catRest = data.expenseByCategory.slice(catShown.length);
   const catRestTotal = catRest.reduce((s, c) => s + c.total, 0);
-  const catRow = (c) =>
-    `<button type="button" class="row row-btn cat-filter-btn" data-category-id="${c.categoryId || ''}" data-category-name="${escapeHtml(c.name)}" style="cursor:pointer;" title="Clicca per vedere i movimenti"><span class="dot" style="background:${c.color}"></span>${escapeHtml(c.name)}${categoryDelta(c)}<span class="amt">${shareChip(c.total, catTotal)}${fmtEur(c.total)}</span></button>`;
+
   const accTotal = (data.expenseByAccount || []).reduce((s, x) => s + (x.total > 0 ? x.total : 0), 0);
   const trendPts = p === 'month' ? trend.filter((t) => t.income > 0 || t.expense > 0) : trend;
   const trendAvg = trendPts.length ? trendPts.reduce((s, t) => s + t.expense, 0) / trendPts.length : null;
 
   main.innerHTML = '';
-  main.appendChild(
-    h(`
+
+  const isClassic = state.dashUI === 'classic';
+
+  // Helper row formatters
+  const catRowClassic = (c) =>
+    `<div class="row"><span class="dot" style="background:${c.color}"></span>${escapeHtml(c.name)}${categoryDelta(c)}<span class="amt">${shareChip(c.total, catTotal)}${fmtEur(c.total)}</span></div>`;
+
+  const catRowFlash = (c) =>
+    `<button type="button" class="row row-btn cat-filter-btn" data-category-id="${c.categoryId || ''}" data-category-name="${escapeHtml(c.name)}" style="cursor:pointer;" title="Clicca per vedere i movimenti"><span class="dot" style="background:${c.color}"></span>${escapeHtml(c.name)}${categoryDelta(c)}<span class="amt">${shareChip(c.total, catTotal)}${fmtEur(c.total)}</span></button>`;
+
+  // HTML template branching
+  let bodyHtml = '';
+
+  if (isClassic) {
+    // ------------------------------------------------------------- CLASSIC DASHBOARD
+    bodyHtml = `
     <div>
       <div class="page-head">
         <div>
           <h1>Ciao ${escapeHtml(state.user.displayName || '')} 👋</h1>
           <p>Il tuo quadro finanziario</p>
+        </div>
+        <div class="segment" id="period-seg">
+          <button data-p="day" class="${p === 'day' ? 'active' : ''}">Giorno</button>
+          <button data-p="week" class="${p === 'week' ? 'active' : ''}">Settimana</button>
+          <button data-p="month" class="${p === 'month' ? 'active' : ''}">Mese</button>
+        </div>
+      </div>
+
+      <div class="dash-controls">
+        <div class="segment scope-seg" id="scope-seg">
+          <button data-s="" class="${state.scope === '' ? 'active' : ''}">Tutti</button>
+          <button data-s="personal" class="${state.scope === 'personal' ? 'active' : ''}">${icons.person}Personale</button>
+          <button data-s="home" class="${state.scope === 'home' ? 'active' : ''}">${icons.home}Casa</button>
+        </div>
+        <div class="period-nav">
+          <button class="icon-btn" id="prev" aria-label="Periodo precedente">${icons.chevronL}</button>
+          <span class="range">${escapeHtml(periodLabel(p, state.anchor))}</span>
+          <button class="icon-btn" id="next" aria-label="Periodo successivo">${icons.chevronR}</button>
+          <button class="btn ghost" id="today-btn">Oggi</button>
+        </div>
+      </div>
+
+      <div class="hero ${block.net >= 0 ? 'pos' : 'neg'}">
+        <div class="hero-bg" aria-hidden="true">${icons.wave}</div>
+        <span class="hero-label">Saldo ${p === 'day' ? 'del giorno' : p === 'week' ? 'della settimana' : 'del mese'}</span>
+        <span class="hero-value">${fmtEur(block.net)}</span>
+        <div class="hero-chips">
+          <span class="hero-chip up drill-chip" data-drill="income" role="button" tabindex="0" title="Vedi movimenti entrate" style="cursor:pointer">${icons.arrowUp}Entrate ${fmtEur(block.income)}</span>
+          <span class="hero-chip down drill-chip" data-drill="expense" role="button" tabindex="0" title="Vedi movimenti uscite" style="cursor:pointer">${icons.arrowDown}Uscite ${fmtEur(block.expense)}</span>
+        </div>
+      </div>
+
+      ${payments.dueCardHtml()}
+
+      <div class="grid cols-2" style="margin-top:16px" id="kpi-grid">
+        <div class="card stat income drill" data-drill="income" role="button" tabindex="0">
+          <div class="stat-head"><span class="stat-ico">${icons.arrowUp}</span><span class="label">Entrate</span></div>
+          <span class="value">${fmtEur(block.income)}</span>
+          ${statSplit(block, 'income')}
+          <div class="spark">${spark(trend.map((t) => t.income), { color: 'var(--income)' })}</div>
+        </div>
+        <div class="card stat expense drill" data-drill="expense" role="button" tabindex="0">
+          <div class="stat-head"><span class="stat-ico">${icons.arrowDown}</span><span class="label">Uscite</span></div>
+          <span class="value">${fmtEur(block.expense)}</span>
+          ${statSplit(block, 'expense')}
+          <div class="spark">${spark(trend.map((t) => t.expense), { color: 'var(--expense)' })}</div>
+        </div>
+      </div>
+
+      <div class="grid cols-2" style="margin-top:16px">
+        <div class="card card-pad chart-card">
+          <h3>Spese per categoria</h3>
+          <p class="hint">Mese di ${escapeHtml(capitalize(dtfMonth.format(parseISO(state.anchor))))} · ▲▼ vs media 3 mesi</p>
+          <div class="donut-wrap">
+            ${donut(data.expenseByCategory, { size: 168 })}
+            <div class="legend">
+              ${
+                data.expenseByCategory.length
+                  ? catShown.map(catRowClassic).join('') +
+                    (catRest.length
+                      ? `<button type="button" class="row row-btn" id="cat-others" aria-label="Dettaglio delle altre ${catRest.length} categorie">
+                           <span class="dot" style="background:var(--ink-faint)"></span>Altre (${catRest.length})${icons.chevronR}
+                           <span class="amt">${shareChip(catRestTotal, catTotal)}${fmtEur(catRestTotal)}</span>
+                         </button>`
+                      : '')
+                  : '<span class="muted">Aggiungi una spesa per vedere la ripartizione.</span>'
+              }
+            </div>
+          </div>
+        </div>
+        <div class="card card-pad chart-card">
+          <h3>Andamento</h3>
+          <p class="hint">${p === 'month' ? 'Ultimi 6 mesi' : 'Ultimi 30 giorni'} · <span style="color:var(--income)">entrate</span> / <span style="color:var(--expense)">uscite</span></p>
+          ${insightTilesClassic(data.insights, data.month)}
+          ${bars(trend, { avgExpense: trendAvg })}
+          ${fixedShareBlock(data.insights)}
+        </div>
+      </div>
+
+      <div class="grid cols-2" style="margin-top:16px">
+        <div class="card card-pad chart-card">
+          <h3>Personale vs Casa</h3>
+          <p class="hint">Uscite del mese</p>
+          ${scopeSplitBlock(data.scopeSplit)}
+        </div>
+        <div class="card card-pad chart-card">
+          <h3>Spese per conto</h3>
+          <p class="hint">Mese di ${escapeHtml(capitalize(dtfMonth.format(parseISO(state.anchor))))}</p>
+          <div class="legend">
+            ${
+              (data.expenseByAccount || []).filter((x) => x.total > 0).length
+                ? data.expenseByAccount
+                    .filter((x) => x.total > 0)
+                    .map(
+                      (x) =>
+                        `<div class="row"><span class="dot" style="background:${x.color}"></span>${escapeHtml(
+                          x.name
+                        )}<span class="amt">${shareChip(x.total, accTotal)}${fmtEur(x.total)}</span></div>`
+                    )
+                    .join('')
+                : '<span class="muted">Assegna un conto ai movimenti per vedere questa ripartizione.</span>'
+            }
+          </div>
+        </div>
+      </div>
+
+      <h2 class="section-title">Movimenti recenti</h2>
+      <div class="card" id="recent"></div>
+    </div>`;
+  } else {
+    // ------------------------------------------------------------- G-FLASH DASHBOARD
+    bodyHtml = `
+    <div>
+      <div class="page-head">
+        <div>
+          <h1>Ciao ${escapeHtml(state.user.displayName || '')} 👋</h1>
+          <p>Il tuo quadro finanziario · <span class="badge-pill" style="font-weight:700;color:var(--brand)">⚡ G-Flash</span></p>
         </div>
         <div class="segment" id="period-seg">
           <button data-p="day" class="${p === 'day' ? 'active' : ''}">Giorno</button>
@@ -450,7 +581,7 @@ async function viewDashboard(main) {
 
       ${payments.dueCardHtml()}
 
-      ${insightTiles(data.insights, data.month)}
+      ${insightTilesFlash(data.insights, data.month)}
 
       <div class="grid cols-2" style="margin-top:16px">
         <div class="card card-pad chart-card">
@@ -461,13 +592,12 @@ async function viewDashboard(main) {
             </div>
             <span class="badge-pill">${data.expenseByCategory.length} categorie</span>
           </div>
-          <p class="hint">Mese di ${escapeHtml(capitalize(dtfMonth.format(parseISO(state.anchor))))} · ▲▼ vs media 3 mesi</p>
           <div class="donut-wrap">
-            ${donut(data.expenseByCategory)}
+            ${donut(data.expenseByCategory, { size: 180 })}
             <div class="legend">
               ${
                 data.expenseByCategory.length
-                  ? catShown.map(catRow).join('') +
+                  ? catShown.map(catRowFlash).join('') +
                     (catRest.length
                       ? `<button type="button" class="row row-btn" id="cat-others" aria-label="Dettaglio delle altre ${catRest.length} categorie">
                            <span class="dot" style="background:var(--ink-faint)"></span>Altre (${catRest.length})${icons.chevronR}
@@ -479,6 +609,7 @@ async function viewDashboard(main) {
             </div>
           </div>
         </div>
+
         <div class="card card-pad chart-card">
           <div class="card-head-flex">
             <div>
@@ -517,26 +648,55 @@ async function viewDashboard(main) {
 
       <h2 class="section-title">Movimenti recenti</h2>
       <div class="card" id="recent"></div>
-    </div>
-  `)
-  );
+    </div>`;
+  }
 
-  main.querySelector('#scope-seg').addEventListener('click', (e) => {
+  main.appendChild(h(bodyHtml));
+
+  // Common navigation listeners
+  main.querySelector('#scope-seg')?.addEventListener('click', (e) => {
     const b = e.target.closest('button');
     if (!b) return;
     state.scope = b.dataset.s;
     viewDashboard(main);
   });
-
-  main.querySelector('#period-seg').addEventListener('click', (e) => {
+  main.querySelector('#period-seg')?.addEventListener('click', (e) => {
     const b = e.target.closest('button');
     if (!b) return;
     state.period = b.dataset.p;
     viewDashboard(main);
   });
+  main.querySelector('#prev')?.addEventListener('click', () => {
+    state.anchor = shiftPeriod(state.period, state.anchor, -1);
+    viewDashboard(main);
+  });
+  main.querySelector('#next')?.addEventListener('click', () => {
+    state.anchor = shiftPeriod(state.period, state.anchor, 1);
+    viewDashboard(main);
+  });
+  main.querySelector('#today-btn')?.addEventListener('click', () => {
+    state.anchor = today();
+    viewDashboard(main);
+  });
 
+  // Classic KPI grid listeners (if present)
+  const kpiGrid = main.querySelector('#kpi-grid');
+  if (kpiGrid) {
+    kpiGrid.addEventListener('click', (e) => {
+      const card = e.target.closest('[data-drill]');
+      if (card) openPeriodTxModal(card.dataset.drill, () => viewDashboard(main));
+    });
+    kpiGrid.addEventListener('keydown', (e) => {
+      if (e.key !== 'Enter' && e.key !== ' ') return;
+      const card = e.target.closest('[data-drill]');
+      if (card) {
+        e.preventDefault();
+        openPeriodTxModal(card.dataset.drill, () => viewDashboard(main));
+      }
+    });
+  }
 
-  // Movimento Flash / Nuovo movimento
+  // Movimento Flash / Nuovo movimento button (Direct + Delegated)
   const quickAddBtn = main.querySelector('#hero-quick-add');
   if (quickAddBtn) {
     quickAddBtn.addEventListener('click', (e) => {
@@ -598,26 +758,16 @@ async function viewDashboard(main) {
       if (accId) openAccountTxModal(accId, accName, () => viewDashboard(main));
     });
   });
+
   payments.bindDueCard(main, () => viewDashboard(main));
+
   main.querySelector('#cat-others')?.addEventListener('click', () => {
     const { close } = modal(`
       <h2>Altre categorie</h2>
       <p class="muted" style="margin:-8px 0 14px">${escapeHtml(capitalize(dtfMonth.format(parseISO(state.anchor))))} · ${catRest.length} categorie · <strong>${fmtEur(catRestTotal)}</strong> (${shareChip(catRestTotal, catTotal).replace(/<[^>]+>/g, '')} delle uscite)</p>
-      <div class="legend others-list">${catRest.map(catRow).join('')}</div>
+      <div class="legend others-list">${catRest.map(isClassic ? catRowClassic : catRowFlash).join('')}</div>
       <div class="modal-actions"><button type="button" class="btn ghost" id="others-close">Chiudi</button></div>`);
     document.getElementById('others-close').addEventListener('click', close);
-  });
-  main.querySelector('#prev').addEventListener('click', () => {
-    state.anchor = shiftPeriod(state.period, state.anchor, -1);
-    viewDashboard(main);
-  });
-  main.querySelector('#next').addEventListener('click', () => {
-    state.anchor = shiftPeriod(state.period, state.anchor, 1);
-    viewDashboard(main);
-  });
-  main.querySelector('#today-btn').addEventListener('click', () => {
-    state.anchor = today();
-    viewDashboard(main);
   });
 
   const { from, to } = periodRange(p, state.anchor);
@@ -632,10 +782,6 @@ async function viewDashboard(main) {
   bindTxRows(recent, () => viewDashboard(main));
 }
 
-/**
- * Popup: the transactions of one type (Entrate / Uscite) for the dashboard's
- * current period and scope. Opened by clicking the KPI cards.
- */
 async function openCategoryTxModal(categoryId, categoryName, onClose) {
   const { from, to } = periodRange(state.period, state.anchor);
   const qs = new URLSearchParams({ from, to, type: 'expense', categoryId: String(categoryId), limit: '300' });
@@ -2184,7 +2330,23 @@ async function viewImpostazioni(main) {
         <div><h1>Impostazioni</h1><p>Configurazione, aggiornamenti e backup</p></div>
       </div>
 
-      <h2 class="section-title">Configurazione</h2>
+            <h2 class="section-title">Interfaccia (UI)</h2>
+      <div class="card card-pad" id="ui-settings-card" style="margin-bottom:16px">
+        <div style="margin-bottom:12px">
+          <div style="font-weight:700;font-size:0.95rem">Stile Dashboard</div>
+          <p class="muted" style="font-size:0.86rem;margin-top:2px">Scegli quale versione della Dashboard utilizzare.</p>
+        </div>
+        <div class="segment" id="dash-ui-seg" style="max-width:360px">
+          <button type="button" data-ui="g-flash" class="${state.dashUI === 'g-flash' ? 'active' : ''}">⚡ G-Flash (Nuova)</button>
+          <button type="button" data-ui="classic" class="${state.dashUI === 'classic' ? 'active' : ''}">🏛️ Classic (Originale)</button>
+        </div>
+        <div class="muted" style="font-size:0.84rem;margin-top:10px" id="dash-ui-desc">
+          ${state.dashUI === 'classic'
+            ? 'Modalità Classic: il layout originale di Soldi con le 2 card entrate/uscite e i grafici standard.'
+            : 'Modalità G-Flash: cockpit moderno con 4 KPI in evidenza, grafici interattivi e pulsante movimento rapido.'}
+        </div>
+      </div>
+<h2 class="section-title">Configurazione</h2>
       <div class="card" style="margin-bottom:6px">
         ${SETTINGS_LINKS.map(
           (s) => `
@@ -2426,15 +2588,83 @@ const dmShort = (iso) => `${iso.slice(8, 10)}/${iso.slice(5, 7)}`;
 
 // Tre indicatori delle uscite del mese dell'ancora: media al giorno (con e senza spese fisse), picco e
 // stima di fine mese (o, per un mese chiuso, quanto è rimasto delle entrate).
-function insightTiles(ins, month) {
+function insightTilesClassic(ins, month) {
   if (!ins) return '';
   const monthName = capitalize(dtfMonth.format(parseISO(state.anchor)));
-  // Con pochi giorni la media oscilla troppo: il confronto col mese scorso compare dal 5° giorno.
   const comparable = !ins.isCurrent || ins.daysElapsed >= 5;
   const prevMonthName = ins.prev ? dtfMonth.format(parseISO(`${ins.prev.month}-01`)).split(' ')[0] : '';
+  const tooEarly = ins.isCurrent && ins.daysElapsed < 3 && ins.prev && ins.prev.avgPerDay != null;
+  const avg = tooEarly
+    ? `
+    <div class="ins-tile">
+      <span class="ins-label">Media al giorno</span>
+      <span class="ins-value">—</span>
+      <span class="ins-sub">troppo presto: ${ins.daysElapsed === 1 ? '1 solo giorno' : `${ins.daysElapsed} giorni`} di dati</span>
+      <span class="ins-sub">${escapeHtml(prevMonthName)}: <strong>${fmtEur(ins.prev.avgPerDay)}</strong> · senza fisse <strong>${fmtEur(ins.prev.avgPerDayVariable)}</strong></span>
+    </div>`
+    : `
+    <div class="ins-tile">
+      <span class="ins-label">Media al giorno</span>
+      <span class="ins-value">${ins.avgPerDay == null ? '—' : fmtEur(ins.avgPerDay)}${
+        comparable ? deltaChip(ins.avgPerDay, ins.prev.avgPerDay, `vs ${prevMonthName} (${fmtEur(ins.prev.avgPerDay)}/giorno)`) : ''
+      }</span>
+      <span class="ins-sub">${
+        ins.avgPerDayVariable == null
+          ? 'nessun dato'
+          : `senza fisse <strong>${fmtEur(ins.avgPerDayVariable)}</strong>${
+              comparable ? deltaChip(ins.avgPerDayVariable, ins.prev.avgPerDayVariable, `senza fisse, vs ${prevMonthName} (${fmtEur(ins.prev.avgPerDayVariable)}/giorno)`) : ''
+            }`
+      }</span>
+    </div>`;
 
-  // Nei primi giorni del mese la media non significa nulla (un solo giorno = quel giorno): si mostra
-  // quella del mese scorso finché non ci sono almeno 3 giorni di dati.
+  const peak = ins.peak
+    ? `
+    <div class="ins-tile">
+      <span class="ins-label">Picco di spesa</span>
+      <span class="ins-value">${fmtEur(ins.peak.amount)}</span>
+      <span class="ins-sub">${escapeHtml(ins.peak.category || ins.peak.note || 'Spesa')} · ${dmShort(ins.peak.date)}</span>
+      ${
+        ins.peakDay
+          ? `<span class="ins-sub">giorno più caro <strong>${dmShort(ins.peakDay.date)}</strong> · ${fmtEur(ins.peakDay.amount)}</span>`
+          : ''
+      }
+    </div>`
+    : `
+    <div class="ins-tile">
+      <span class="ins-label">Picco di spesa</span>
+      <span class="ins-value">—</span>
+      <span class="ins-sub">nessuna spesa variabile</span>
+    </div>`;
+
+  const third =
+    ins.projection != null
+      ? `
+    <div class="ins-tile">
+      <span class="ins-label">Stima a fine mese</span>
+      <span class="ins-value">${fmtEur(ins.projection)}${deltaChip(ins.projection, ins.prev.expense, `vs ${prevMonthName} (${fmtEur(ins.prev.expense)})`)}</span>
+      <span class="ins-sub">fisse registrate + variabili alla media</span>
+    </div>`
+      : (() => {
+          const inc = month?.income || 0;
+          const net = month?.net || 0;
+          return `
+    <div class="ins-tile">
+      <span class="ins-label">Risparmio del mese</span>
+      <span class="ins-value ${net >= 0 ? 'pos' : 'neg'}">${fmtEur(net)}</span>
+      <span class="ins-sub">${inc > 0 ? `<strong>${Math.round((net / inc) * 100)}%</strong> delle entrate` : 'nessuna entrata'}</span>
+    </div>`;
+        })();
+
+  return `
+    <div class="ins-caption">${escapeHtml(monthName)}</div>
+    <div class="ins-grid">${avg}${peak}${third}</div>`;
+}
+
+function insightTilesFlash(ins, month) {
+  if (!ins) return '';
+  const monthName = capitalize(dtfMonth.format(parseISO(state.anchor)));
+  const comparable = !ins.isCurrent || ins.daysElapsed >= 5;
+  const prevMonthName = ins.prev ? dtfMonth.format(parseISO(`${ins.prev.month}-01`)).split(' ')[0] : '';
   const tooEarly = ins.isCurrent && ins.daysElapsed < 3 && ins.prev && ins.prev.avgPerDay != null;
   const avg = tooEarly
     ? `
