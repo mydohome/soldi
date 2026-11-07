@@ -567,7 +567,7 @@ async function viewDashboard(main) {
         <div class="hero-bg" aria-hidden="true">${icons.wave}</div>
         <div class="hero-head-row">
           <span class="hero-tag">⚡ Saldo ${p === 'day' ? 'del giorno' : p === 'week' ? 'della settimana' : 'del mese'}</span>
-          <button type="button" class="hero-action-btn" id="hero-quick-add">${icons.plus} Nuovo movimento</button>
+          <button type="button" class="hero-action-btn" id="hero-quick-add">${icons.plus} <span>Nuovo</span></button>
         </div>
         <div class="hero-main-row">
           <span class="hero-value">${fmtEur(block.net)}</span>
@@ -575,7 +575,7 @@ async function viewDashboard(main) {
         <div class="hero-chips">
           <span class="hero-chip up drill-chip" data-drill="income" role="button" tabindex="0" title="Vedi movimenti entrate">${icons.arrowUp}Entrate: <strong>${fmtEur(block.income)}</strong></span>
           <span class="hero-chip down drill-chip" data-drill="expense" role="button" tabindex="0" title="Vedi movimenti uscite">${icons.arrowDown}Uscite: <strong>${fmtEur(block.expense)}</strong></span>
-          <span class="hero-chip neutral" title="Rapporto entrate/uscite">${icons.trend} Risparmio netto: <strong>${block.income > 0 ? Math.round((block.net / block.income) * 100) : 0}%</strong></span>
+          ${block.income > 0 ? `<span class="hero-chip neutral" title="Rapporto entrate/uscite">${icons.trend} Risparmio: <strong>${Math.round((block.net / block.income) * 100)}%</strong></span>` : ''}
         </div>
       </div>
 

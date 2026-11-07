@@ -304,10 +304,7 @@ button { cursor: pointer; }
   backdrop-filter: blur(4px);
 }
 .hero-chip svg { width: 14px; height: 14px; flex: none; }
-@media (max-width: 560px) {
-  .hero-chips { flex-wrap: nowrap; gap: 8px; }
-  .hero-chip { flex: 1 1 0; min-width: 0; justify-content: center; padding: 7px 9px; font-size: 0.76rem; }
-}
+/* Mobile hero-chips managed in responsive section */
 
 /* ---------- Stat cards ---------- */
 .stat {
@@ -1372,17 +1369,53 @@ code.block {
 }
 
 @media (max-width: 560px) {
+  .hero {
+    padding: 18px 16px;
+    border-radius: 20px;
+  }
   .hero-head-row {
-    flex-direction: column;
-    align-items: flex-start;
-    gap: 10px;
+    display: flex;
+    flex-direction: row;
+    justify-content: space-between;
+    align-items: center;
+    width: 100%;
+    gap: 8px;
+    margin-bottom: 8px;
+  }
+  .hero-tag {
+    font-size: 0.7rem;
+    padding: 4px 10px;
   }
   .hero-action-btn {
-    width: 100%;
-    justify-content: center;
+    width: auto;
+    padding: 6px 12px;
+    font-size: 0.78rem;
+    flex: none;
   }
   .hero-value {
     font-size: 2.2rem;
+    margin: 8px 0 14px;
+    word-break: break-word;
+  }
+  .hero-chips {
+    display: grid !important;
+    grid-template-columns: 1fr 1fr;
+    gap: 8px;
+    width: 100%;
+    margin-top: 10px;
+  }
+  .hero-chip {
+    width: 100% !important;
+    min-width: 0 !important;
+    justify-content: center;
+    padding: 8px 6px;
+    font-size: 0.78rem;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .hero-chip.neutral {
+    grid-column: 1 / -1;
   }
 }
 
