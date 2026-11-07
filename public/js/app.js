@@ -397,7 +397,7 @@ async function viewDashboard(main) {
   const catRest = data.expenseByCategory.slice(catShown.length);
   const catRestTotal = catRest.reduce((s, c) => s + c.total, 0);
   const catRow = (c) =>
-    `<div class="row"><span class="dot" style="background:${c.color}"></span>${escapeHtml(c.name)}${categoryDelta(c)}<span class="amt">${shareChip(c.total, catTotal)}${fmtEur(c.total)}</span></div>`;
+    `<button type="button" class="row row-btn cat-filter-btn" data-category-id="${c.categoryId || ''}" data-category-name="${escapeHtml(c.name)}" style="cursor:pointer;" title="Clicca per vedere i movimenti"><span class="dot" style="background:${c.color}"></span>${escapeHtml(c.name)}${categoryDelta(c)}<span class="amt">${shareChip(c.total, catTotal)}${fmtEur(c.total)}</span></button>`;
   const accTotal = (data.expenseByAccount || []).reduce((s, x) => s + (x.total > 0 ? x.total : 0), 0);
   const trendPts = p === 'month' ? trend.filter((t) => t.income > 0 || t.expense > 0) : trend;
   const trendAvg = trendPts.length ? trendPts.reduce((s, t) => s + t.expense, 0) / trendPts.length : null;
@@ -506,9 +506,7 @@ async function viewDashboard(main) {
                     .filter((x) => x.total > 0)
                     .map(
                       (x) =>
-                        `<div class="row"><span class="dot" style="background:${x.color}"></span>${escapeHtml(
-                          x.name
-                        )}<span class="amt">${shareChip(x.total, accTotal)}${fmtEur(x.total)}</span></div>`
+                        `<button type="button" class="row row-btn acc-filter-btn" data-account-id="${x.accountId || ''}" data-account-name="${escapeHtml(x.name)}" style="cursor:pointer;" title="Clicca per vedere i movimenti"><span class="dot" style="background:${x.color}"></span>${escapeHtml(x.name)}<span class="amt">${shareChip(x.total, accTotal)}${fmtEur(x.total)}</span></button>`
                     )
                     .join('')
                 : '<span class="muted">Assegna un conto ai movimenti per vedere questa ripartizione.</span>'
@@ -537,21 +535,20 @@ async function viewDashboard(main) {
     viewDashboard(main);
   });
 
-  main.querySelector('#kpi-grid').addEventListener('click', (e) => {
-    const card = e.target.closest('[data-drill]');
-    if (card) openPeriodTxModal(card.dataset.drill, () => viewDashboard(main));
-  });
-  main.querySelector('#kpi-grid').addEventListener('keydown', (e) => {
-    if (e.key !== 'Enter' && e.key !== ' ') return;
-    const card = e.target.closest('[data-drill]');
-    if (card) {
+
+  // Movimento Flash / Nuovo movimento
+  const quickAddBtn = main.querySelector('#hero-quick-add');
+  if (quickAddBtn) {
+    quickAddBtn.addEventListener('click', (e) => {
       e.preventDefault();
-      openPeriodTxModal(card.dataset.drill, () => viewDashboard(main));
-    }
-  });
-  main.querySelector('#hero-quick-add')?.addEventListener('click', () => openTxModal(null, () => viewDashboard(main)));
+      openTxModal(null, () => viewDashboard(main));
+    });
+  }
+
+  // Pillole entrate / uscite
   main.querySelectorAll('.drill-chip').forEach((chip) => {
-    chip.addEventListener('click', () => {
+    chip.addEventListener('click', (e) => {
+      e.preventDefault();
       openPeriodTxModal(chip.dataset.drill, () => viewDashboard(main));
     });
     chip.addEventListener('keydown', (e) => {
@@ -561,11 +558,44 @@ async function viewDashboard(main) {
       }
     });
   });
+
+  // Barre andamento cliccabili per mese
   main.querySelectorAll('.bars .bar-col[data-month]').forEach((col) => {
-    col.addEventListener('click', () => {
+    col.addEventListener('click', (e) => {
+      e.preventDefault();
       state.anchor = col.dataset.month + '-01';
       state.period = 'month';
       viewDashboard(main);
+    });
+  });
+
+  // Ciambella cliccabile per categoria
+  main.querySelectorAll('.donut-arc[data-category-id]').forEach((arc) => {
+    arc.addEventListener('click', (e) => {
+      e.preventDefault();
+      const catId = arc.dataset.categoryId;
+      const catName = arc.dataset.categoryName;
+      if (catId) openCategoryTxModal(catId, catName, () => viewDashboard(main));
+    });
+  });
+
+  // Categorie in legenda cliccabili
+  main.querySelectorAll('.cat-filter-btn[data-category-id]').forEach((btn) => {
+    btn.addEventListener('click', (e) => {
+      e.preventDefault();
+      const catId = btn.dataset.categoryId;
+      const catName = btn.dataset.categoryName;
+      if (catId) openCategoryTxModal(catId, catName, () => viewDashboard(main));
+    });
+  });
+
+  // Conti cliccabili
+  main.querySelectorAll('.acc-filter-btn[data-account-id]').forEach((btn) => {
+    btn.addEventListener('click', (e) => {
+      e.preventDefault();
+      const accId = btn.dataset.accountId;
+      const accName = btn.dataset.accountName;
+      if (accId) openAccountTxModal(accId, accName, () => viewDashboard(main));
     });
   });
   payments.bindDueCard(main, () => viewDashboard(main));
@@ -606,6 +636,76 @@ async function viewDashboard(main) {
  * Popup: the transactions of one type (Entrate / Uscite) for the dashboard's
  * current period and scope. Opened by clicking the KPI cards.
  */
+async function openCategoryTxModal(categoryId, categoryName, onClose) {
+  const { from, to } = periodRange(state.period, state.anchor);
+  const qs = new URLSearchParams({ from, to, type: 'expense', categoryId: String(categoryId), limit: '300' });
+  if (state.scope) qs.set('scope', state.scope);
+  const heading = `${categoryName || 'Spese'} · ${periodLabel(state.period, state.anchor)}`;
+  let changed = false;
+  const { bd, close } = modal(
+    `
+    <h2>${escapeHtml(heading)}</h2>
+    <div id="cat-body"><div class="boot"><div class="boot-mark"></div></div></div>
+    <div class="modal-actions"><button type="button" class="btn ghost" id="cat-close">Chiudi</button></div>
+  `,
+    () => { if (changed) onClose?.(); }
+  );
+  bd.querySelector('#cat-close').addEventListener('click', close);
+  const body = bd.querySelector('#cat-body');
+  try {
+    const { transactions } = await api.transactions(qs.toString());
+    if (transactions.length === 0) {
+      body.innerHTML = emptyState('Nessun movimento in questo periodo per questa categoria.');
+      return;
+    }
+    const total = transactions.reduce((s, t) => s + t.amount, 0);
+    body.innerHTML =
+      `<div class="kv" style="margin-bottom:12px"><span>Totale ${escapeHtml(categoryName)}</span><span class="mono" style="font-weight:800;color:var(--expense)">${fmtEur(total)}</span></div>` +
+      transactions.map(txRow).join('');
+    bindTxRows(body, () => {
+      changed = true;
+      onClose?.();
+    });
+  } catch (err) {
+    body.innerHTML = `<div class="empty">Errore: ${escapeHtml(err.message)}</div>`;
+  }
+}
+
+async function openAccountTxModal(accountId, accountName, onClose) {
+  const { from, to } = periodRange(state.period, state.anchor);
+  const qs = new URLSearchParams({ from, to, accountId: String(accountId), limit: '300' });
+  if (state.scope) qs.set('scope', state.scope);
+  const heading = `${accountName || 'Conto'} · ${periodLabel(state.period, state.anchor)}`;
+  let changed = false;
+  const { bd, close } = modal(
+    `
+    <h2>${escapeHtml(heading)}</h2>
+    <div id="acc-body"><div class="boot"><div class="boot-mark"></div></div></div>
+    <div class="modal-actions"><button type="button" class="btn ghost" id="acc-close">Chiudi</button></div>
+  `,
+    () => { if (changed) onClose?.(); }
+  );
+  bd.querySelector('#acc-close').addEventListener('click', close);
+  const body = bd.querySelector('#acc-body');
+  try {
+    const { transactions } = await api.transactions(qs.toString());
+    if (transactions.length === 0) {
+      body.innerHTML = emptyState('Nessun movimento in questo periodo per questo conto.');
+      return;
+    }
+    const total = transactions.reduce((s, t) => s + (t.type === 'income' ? t.amount : -t.amount), 0);
+    body.innerHTML =
+      `<div class="kv" style="margin-bottom:12px"><span>Saldo periodo</span><span class="mono" style="font-weight:800;color:var(--${total >= 0 ? 'income' : 'expense'})">${fmtEur(total)}</span></div>` +
+      transactions.map(txRow).join('');
+    bindTxRows(body, () => {
+      changed = true;
+      onClose?.();
+    });
+  } catch (err) {
+    body.innerHTML = `<div class="empty">Errore: ${escapeHtml(err.message)}</div>`;
+  }
+}
+
 async function openPeriodTxModal(kind, onClose) {
   const { from, to } = periodRange(state.period, state.anchor);
   const qs = new URLSearchParams({ from, to, type: kind, limit: '300' });

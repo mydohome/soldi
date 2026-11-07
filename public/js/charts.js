@@ -29,14 +29,19 @@ export function donut(data, { size = 180, thickness = 26 } = {}) {
     .map((d) => {
       const frac = d.total / total;
       const dash = frac * circ;
+      const pct = Math.round(frac * 100);
       const seg = `
         <circle cx="${cx}" cy="${cy}" r="${r}" fill="none"
+          class="donut-arc"
+          data-category-id="${d.categoryId || ''}"
+          data-category-name="${escapeHtml(d.name)}"
           stroke="${d.color}" stroke-width="${thickness}"
           stroke-dasharray="${dash} ${circ - dash}"
           stroke-dashoffset="${-offset}"
           transform="rotate(-90 ${cx} ${cy})"
-          stroke-linecap="butt">
-          <title>${escapeHtml(d.name)} — ${fmtEur(d.total)}</title>
+          stroke-linecap="butt"
+          style="cursor:pointer;">
+          <title>${escapeHtml(d.name)}: ${fmtEur(d.total)} (${pct}%) · Clicca per vedere i movimenti</title>
         </circle>`;
       offset += dash;
       return seg;

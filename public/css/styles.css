@@ -1385,3 +1385,38 @@ code.block {
     font-size: 2.2rem;
   }
 }
+
+/* Interattività Ciambella e Conti */
+.donut-arc {
+  cursor: pointer;
+  transition: opacity 0.15s ease, stroke-width 0.15s ease;
+}
+.donut-arc:hover {
+  opacity: 0.82;
+  stroke-width: 32px;
+}
+.cat-filter-btn, .acc-filter-btn {
+  background: none;
+  border: none;
+  font: inherit;
+  width: 100%;
+  text-align: left;
+  padding: 3px 6px;
+  border-radius: 8px;
+  transition: background 0.15s ease, color 0.15s ease;
+}
+.cat-filter-btn:hover, .acc-filter-btn:hover {
+  background: var(--bg-sunken);
+  color: var(--brand);
+}
+.drill-chip {
+  cursor: pointer !important;
+  user-select: none;
+}
+.drill-chip:hover {
+  filter: brightness(1.12);
+  transform: translateY(-1px);
+}
+.hero-action-btn {
+  cursor: pointer !important;
+}
