@@ -434,34 +434,33 @@ async function viewDashboard(main) {
 
       <div class="hero ${block.net >= 0 ? 'pos' : 'neg'}">
         <div class="hero-bg" aria-hidden="true">${icons.wave}</div>
-        <span class="hero-label">Saldo ${p === 'day' ? 'del giorno' : p === 'week' ? 'della settimana' : 'del mese'}</span>
-        <span class="hero-value">${fmtEur(block.net)}</span>
+        <div class="hero-head-row">
+          <span class="hero-tag">⚡ Saldo ${p === 'day' ? 'del giorno' : p === 'week' ? 'della settimana' : 'del mese'}</span>
+          <button type="button" class="hero-action-btn" id="hero-quick-add">${icons.plus} Nuovo movimento</button>
+        </div>
+        <div class="hero-main-row">
+          <span class="hero-value">${fmtEur(block.net)}</span>
+        </div>
         <div class="hero-chips">
-          <span class="hero-chip up drill-chip" data-drill="income" role="button" tabindex="0" title="Vedi movimenti entrate">${icons.arrowUp}Entrate ${fmtEur(block.income)}</span>
-          <span class="hero-chip down drill-chip" data-drill="expense" role="button" tabindex="0" title="Vedi movimenti uscite">${icons.arrowDown}Uscite ${fmtEur(block.expense)}</span>
+          <span class="hero-chip up drill-chip" data-drill="income" role="button" tabindex="0" title="Vedi movimenti entrate">${icons.arrowUp}Entrate: <strong>${fmtEur(block.income)}</strong></span>
+          <span class="hero-chip down drill-chip" data-drill="expense" role="button" tabindex="0" title="Vedi movimenti uscite">${icons.arrowDown}Uscite: <strong>${fmtEur(block.expense)}</strong></span>
+          <span class="hero-chip neutral" title="Rapporto entrate/uscite">${icons.trend} Risparmio netto: <strong>${block.income > 0 ? Math.round((block.net / block.income) * 100) : 0}%</strong></span>
         </div>
       </div>
 
       ${payments.dueCardHtml()}
 
-      <div class="grid cols-2" style="margin-top:16px" id="kpi-grid">
-        <div class="card stat income drill" data-drill="income" role="button" tabindex="0">
-          <div class="stat-head"><span class="stat-ico">${icons.arrowUp}</span><span class="label">Entrate</span></div>
-          <span class="value">${fmtEur(block.income)}</span>
-          ${statSplit(block, 'income')}
-          <div class="spark">${spark(trend.map((t) => t.income), { color: 'var(--income)' })}</div>
-        </div>
-        <div class="card stat expense drill" data-drill="expense" role="button" tabindex="0">
-          <div class="stat-head"><span class="stat-ico">${icons.arrowDown}</span><span class="label">Uscite</span></div>
-          <span class="value">${fmtEur(block.expense)}</span>
-          ${statSplit(block, 'expense')}
-          <div class="spark">${spark(trend.map((t) => t.expense), { color: 'var(--expense)' })}</div>
-        </div>
-      </div>
+      ${insightTiles(data.insights, data.month)}
 
       <div class="grid cols-2" style="margin-top:16px">
         <div class="card card-pad chart-card">
-          <h3>Spese per categoria</h3>
+          <div class="card-head-flex">
+            <div>
+              <h3>Spese per categoria</h3>
+              <p class="hint">Mese di ${escapeHtml(capitalize(dtfMonth.format(parseISO(state.anchor))))} · ▲▼ vs media 3 mesi</p>
+            </div>
+            <span class="badge-pill">${data.expenseByCategory.length} categorie</span>
+          </div>
           <p class="hint">Mese di ${escapeHtml(capitalize(dtfMonth.format(parseISO(state.anchor))))} · ▲▼ vs media 3 mesi</p>
           <div class="donut-wrap">
             ${donut(data.expenseByCategory)}
@@ -481,11 +480,13 @@ async function viewDashboard(main) {
           </div>
         </div>
         <div class="card card-pad chart-card">
-          <h3>Andamento</h3>
-          <p class="hint">${p === 'month' ? 'Ultimi 6 mesi' : 'Ultimi 30 giorni'} · <span style="color:var(--income)">entrate</span> / <span style="color:var(--expense)">uscite</span></p>
-          ${insightTiles(data.insights, data.month)}
+          <div class="card-head-flex">
+            <div>
+              <h3>Andamento</h3>
+              <p class="hint">${p === 'month' ? 'Ultimi 6 mesi' : 'Ultimi 30 giorni'} · <span style="color:var(--income)">entrate</span> / <span style="color:var(--expense)">uscite</span> · clicca sul mese per navigare</p>
+            </div>
+          </div>
           ${bars(trend, { avgExpense: trendAvg })}
-          ${fixedShareBlock(data.insights)}
         </div>
       </div>
 
@@ -548,6 +549,7 @@ async function viewDashboard(main) {
       openPeriodTxModal(card.dataset.drill, () => viewDashboard(main));
     }
   });
+  main.querySelector('#hero-quick-add')?.addEventListener('click', () => openTxModal(null, () => viewDashboard(main)));
   main.querySelectorAll('.drill-chip').forEach((chip) => {
     chip.addEventListener('click', () => {
       openPeriodTxModal(chip.dataset.drill, () => viewDashboard(main));
@@ -2395,9 +2397,23 @@ function insightTiles(ins, month) {
     </div>`;
         })();
 
+  const fourth = ins?.expense > 0
+    ? `
+    <div class="ins-tile">
+      <span class="ins-label">Spese Fisse</span>
+      <span class="ins-value">${ins.fixedShare ?? 0}%</span>
+      <span class="ins-sub">fisse <strong>${fmtEur(ins.fixed)}</strong> · var. <strong>${fmtEur(ins.variable)}</strong></span>
+      ${ins.prev?.fixedShare != null ? `<span class="ins-sub">${escapeHtml(prevMonthName)}: ${ins.prev.fixedShare}%</span>` : ''}
+    </div>`
+    : `
+    <div class="ins-tile">
+      <span class="ins-label">Spese Fisse</span>
+      <span class="ins-value">—</span>
+      <span class="ins-sub">nessuna spesa fissa</span>
+    </div>`;
+
   return `
-    <div class="ins-caption">${escapeHtml(monthName)}</div>
-    <div class="ins-grid">${avg}${peak}${third}</div>`;
+    <div class="ins-grid">${avg}${peak}${third}${fourth}</div>`;
 }
 
 // Quanto pesano le spese fisse sulle uscite del mese (barra fisse / variabili).

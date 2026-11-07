@@ -7,7 +7,7 @@ const fmtEur = (n) =>
  * Donut chart for a category breakdown.
  * data: [{ name, color, total }]  (already sorted desc)
  */
-export function donut(data, { size = 168, thickness = 26 } = {}) {
+export function donut(data, { size = 180, thickness = 26 } = {}) {
   const total = data.reduce((s, d) => s + d.total, 0);
   const r = (size - thickness) / 2;
   const cx = size / 2;
@@ -47,9 +47,9 @@ export function donut(data, { size = 168, thickness = 26 } = {}) {
     <svg class="donut-svg" viewBox="0 0 ${size} ${size}" width="${size}" height="${size}" role="img" aria-label="Spese per categoria">
       <circle cx="${cx}" cy="${cy}" r="${r}" fill="none" stroke="var(--bg-sunken)" stroke-width="${thickness}" />
       ${arcs}
-      <text x="${cx}" y="${cy - 7}" text-anchor="middle" dominant-baseline="middle" fill="var(--ink-faint)" font-size="10.5" font-weight="600"
+      <text x="${cx}" y="${cy - 8}" text-anchor="middle" dominant-baseline="middle" fill="var(--ink-faint)" font-size="11" font-weight="700"
             letter-spacing="0.08em">USCITE</text>
-      <text x="${cx}" y="${cy + 12}" text-anchor="middle" dominant-baseline="middle" fill="var(--ink)" font-size="15" font-weight="700">
+      <text x="${cx}" y="${cy + 14}" text-anchor="middle" dominant-baseline="middle" fill="var(--ink)" font-size="16" font-weight="800">
         ${fmtEur(total)}
       </text>
     </svg>`;
@@ -94,9 +94,9 @@ export function bars(series, { width = 640, height = 200, avgExpense = null, lab
           <title>${titleText}</title>
           ${valueLabel}
           <rect x="${x - barW - gap / 2}" y="${pad.top + ih - ih1}" width="${barW}" height="${Math.max(0, ih1)}"
-                rx="3" fill="var(--income)"></rect>
+                rx="4" fill="var(--income)"></rect>
           <rect x="${x + gap / 2}" y="${pad.top + ih - eh1}" width="${barW}" height="${Math.max(0, eh1)}"
-                rx="3" fill="var(--expense)"></rect>
+                rx="4" fill="var(--expense)"></rect>
           ${
             showLabel
               ? `<text x="${x}" y="${height - 8}" text-anchor="middle" fill="var(--ink-faint)" font-size="9.5">${escapeHtml(
