@@ -51,6 +51,8 @@ lock_acquire update
 git_ro() (
   umask 022
   GIT_TERMINAL_PROMPT=0 GIT_ASKPASS=/bin/true GIT_CONFIG_NOSYSTEM=1 \
+    GIT_AUTHOR_NAME="${GIT_AUTHOR_NAME:-Soldi}" GIT_AUTHOR_EMAIL="${GIT_AUTHOR_EMAIL:-soldi@localhost}" \
+    GIT_COMMITTER_NAME="${GIT_COMMITTER_NAME:-Soldi}" GIT_COMMITTER_EMAIL="${GIT_COMMITTER_EMAIL:-soldi@localhost}" \
     exec git -c credential.helper= -c 'http.https://github.com/.extraheader=' -c http.extraheader= "$@"
 )
 app_git() { git_ro -C "$APP_DIR" "$@"; }
@@ -114,6 +116,15 @@ fi
 
 # --- 2. codice -------------------------------------------------------------------
 before_full="$(app_git rev-parse HEAD)"
+
+# Crea un tag snapshot locale pre-aggiornamento per consentire il downgrade (soldi downgrade)
+snap_tag="pre-update-$(date +%Y%m%d-%H%M%S)"
+GIT_COMMITTER_NAME="${GIT_COMMITTER_NAME:-Soldi}" GIT_COMMITTER_EMAIL="${GIT_COMMITTER_EMAIL:-soldi@localhost}" \
+  app_git tag -a "$snap_tag" "$before_full" -m "Snapshot pre-aggiornamento $(date "+%Y-%m-%d %H:%M:%S")" 2>/dev/null || \
+  app_git tag "$snap_tag" "$before_full" 2>/dev/null || true
+for old_snap in $(app_git tag -l "pre-update-*" --sort=-creatordate | tail -n +11); do
+  app_git tag -d "$old_snap" >/dev/null 2>&1 || true
+done
 log "Scarico gli aggiornamenti…"
 app_git fetch --quiet origin main || die "Impossibile contattare GitHub (git fetch fallito). Se il repository è pubblico dovrebbe funzionare senza credenziali."
 app_git merge --ff-only origin/main >&2 || die "Aggiornamento non fast-forward: ci sono commit locali sul server (controlla: git -C \"$APP_DIR\" status)."

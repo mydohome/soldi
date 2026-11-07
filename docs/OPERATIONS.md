@@ -48,7 +48,8 @@ ln -s app/ops/soldi ./soldi
 | `soldi restore-test [--from-offsite]` | prova che l'ultimo backup si ripristina davvero |
 | `soldi restore --latest \| --source <nome>` | ripristino guidato sul sistema esistente |
 | `soldi dr` | ripristino di emergenza su una macchina nuova |
-| `soldi update [--force]` | aggiornamento con backup obbligatorio e rollback automatico |
+| `soldi update [--force]` | aggiornamento con backup obbligatorio, snapshot tag e rollback automatico |
+| `soldi downgrade [--to <tag>] [--list]` | ripristino guidato a uno snapshot precedente con eventuale revert su GitHub |
 | `soldi watch` | controllo di salute (di norma da cron; a mano mostra ogni controllo) |
 | `soldi notify-test [--simulate-fault]` | prova delle notifiche |
 | `soldi logs [-f] [web\|db]` | log dei container |
@@ -194,6 +195,37 @@ poi `git pull --ff-only` da una shell normale e `soldi update`. Il Dockerfile or
 quindi il codice vecchio gira normalmente sul database nuovo; il dump pre-aggiornamento copre i casi
 distruttivi. Un nuovo pacchetto npm richiede la ricostruzione dell'immagine (lo fa `update`); il pulsante
 «Aggiorna» dell'app fa solo `git pull` e riavvio e **non** installa nuove dipendenze.
+
+## Downgrade a uno snapshot precedente
+
+`soldi downgrade` (`ops/downgrade.sh`):
+
+1. **Snapshot automatici**: a ogni `soldi update`, prima di scaricare il nuovo codice viene
+   creato un tag git locale `pre-update-AAAAMMGG-hhmmss` (vengono conservati gli ultimi 10);
+2. **Selezione della versione**: con `soldi downgrade --list` vedi tutti gli snapshot disponibili
+   con data e commit. Senza argomenti, mostra un menu numerato interattivo (default: lo snapshot
+   immediatamente precedente all'ultimo aggiornamento); con `--to <tag|commit>` specifichi
+   direttamente il punto di ripristino;
+3. **Backup di sicurezza**: crea un dump preventivo completo del database (`backups/dumps/pre-downgrade-*`);
+4. **Ripristino locale**: reimposta il codice locale al tag scelto e ricostruisce i container
+   (`docker compose up -d --build`), verificando che il container diventi sano;
+5. **Sincronizzazione GitHub (opzionale)**: se confermato (o con flag `--push`), crea un
+   commit di ripristino pulito (`read-tree`) su `origin/main` e lo invia a GitHub senza
+   riscrivere la cronologia (nessun `--force`). Con `--no-push` il ripristino rimane solo locale.
+
+```bash
+# Elenca gli snapshot disponibili
+./soldi downgrade --list
+
+# Downgrade interattivo con menu di scelta
+./soldi downgrade
+
+# Downgrade diretto all'ultimo snapshot senza conferme
+./soldi downgrade --yes
+
+# Downgrade con sincronizzazione immediata di GitHub tramite revert
+./soldi downgrade --yes --push
+```
 
 ## Ripristino guidato
 

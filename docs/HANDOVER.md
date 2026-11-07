@@ -76,7 +76,7 @@ per cause esterne, dirlo e proporre il rimedio invece di forzare; mai segreti ne
 | Backup / ripristino | `src/backup/*` (`tables.js` elenca le tabelle: **aggiungere qui ogni nuova tabella**), `restore-user.js` rimappa gli id |
 | Diagnostica | `src/diag/checks.js`, `scripts/diag.js` (`npm run diag`) |
 | Interfaccia | `public/js/app.js` (SPA, router a hash, `modal()`, `choiceModal()`, `txRow`, `openTxModal`), `public/css/styles.css`, `public/js/api.js` |
-| Gestione server | `ops/*.sh`, `ops/soldi` (comando `./soldi`), `ops/lib.sh`, `docs/OPERATIONS.md` |
+| Gestione server | `ops/*.sh` (incluso `downgrade.sh`), `ops/soldi` (comando `./soldi`), `ops/lib.sh`, `docs/OPERATIONS.md` |
 | CI | `.github/workflows/{ci,ops,security}.yml`, `.github/dependabot.yml` |
 | Test | `tests/*.test.js` (`tests/helpers.js` = harness), `ops/tests/*_test.sh` |
 
@@ -117,6 +117,11 @@ della macchina), `restore-test`, `offsite`, `notify-test`, `logs web`, `diag`. D
   `/app/package.json` (il backup fallisce con EACCES). Il Dockerfile imposta comunque `go+rX` su `/app`.
 - Il container può avere `cap_drop: ALL`: `exec -u root … chmod` non funziona, serve `-u node`.
 - Il backup pre-aggiornamento gira nel container **già in esecuzione** (costruito dall'aggiornamento precedente).
+- **Snapshot e Downgrade (`./soldi downgrade`)**: a ogni `./soldi update`, prima del pull
+  viene creato un tag annotato `pre-update-YYYYMMDD-HHMMSS` (conservando gli ultimi 10).
+  Con `./soldi downgrade` (o `--list` / `--to <tag>`) si può tornare a uno snapshot
+  precedente con dump di sicurezza del database; include l'opzione per sincronizzare
+  automaticamente anche `origin/main` su GitHub tramite commit di revert pulito.
 - Non ancora configurati in produzione: notifiche **Telegram** (`ops.env`, `./soldi notify-test`) e copia
   fuori macchina **restic** (`./soldi offsite --init`, mai provata su un server reale).
 - Immagine: `node:24-alpine`, npm 12, `undici` incorporato in npm sostituito con una versione corretta

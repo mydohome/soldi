@@ -29,6 +29,7 @@ Uso: soldi [--home <cartella>] <comando> [opzioni]
   offsite                copia fuori macchina cifrata con restic (--init per creare il repository)
   check                  controllo dei backup (esce 0 ok, 2 avviso, 1 errore)
   update                 aggiornamento con backup e rollback (--force)
+  downgrade              ripristino a uno snapshot precedente con eventuale revert (--to, --list)
   dr                     ripristino di emergenza su una macchina nuova
   watch                  controllo di salute (di norma da cron; a mano mostra ogni controllo)
   notify-test            prova delle notifiche (--simulate-fault)
@@ -59,6 +60,7 @@ case "$cmd" in
   offsite)      run offsite.sh "$@" ;;
   check)        run backup-check.sh "$@" ;;
   update)       run update.sh "$@" ;;
+  downgrade)    run downgrade.sh "$@" ;;
   dr)           run dr.sh "$@" ;;
   watch)        run watch.sh "$@" ;;
   notify-test)  run notify-test.sh "$@" ;;
