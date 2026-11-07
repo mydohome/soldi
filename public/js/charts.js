@@ -44,12 +44,12 @@ export function donut(data, { size = 168, thickness = 26 } = {}) {
     .join('');
 
   return `
-    <svg viewBox="0 0 ${size} ${size}" width="${size}" height="${size}" role="img" aria-label="Spese per categoria">
+    <svg class="donut-svg" viewBox="0 0 ${size} ${size}" width="${size}" height="${size}" role="img" aria-label="Spese per categoria">
       <circle cx="${cx}" cy="${cy}" r="${r}" fill="none" stroke="var(--bg-sunken)" stroke-width="${thickness}" />
       ${arcs}
-      <text x="${cx}" y="${cy - 6}" text-anchor="middle" fill="var(--ink-faint)" font-size="10.5"
+      <text x="${cx}" y="${cy - 7}" text-anchor="middle" dominant-baseline="middle" fill="var(--ink-faint)" font-size="10.5" font-weight="600"
             letter-spacing="0.08em">USCITE</text>
-      <text x="${cx}" y="${cy + 12}" text-anchor="middle" fill="var(--ink)" font-size="15" font-weight="700">
+      <text x="${cx}" y="${cy + 12}" text-anchor="middle" dominant-baseline="middle" fill="var(--ink)" font-size="15" font-weight="700">
         ${fmtEur(total)}
       </text>
     </svg>`;
@@ -85,13 +85,18 @@ export function bars(series, { width = 640, height = 200, avgExpense = null, lab
           ? `<text x="${x + gap / 2 + barW / 2}" y="${Math.max(10, pad.top + ih - eh1 - 5)}" text-anchor="middle"
                    fill="var(--expense)" font-size="10" font-weight="700">${fmtEur0(d.expense)}</text>`
           : '';
+      const net = (d.income || 0) - (d.expense || 0);
+      const netFmt = (net >= 0 ? '+' : '') + fmtEur(net);
+      const isClickable = !!d.month;
+      const titleText = `${escapeHtml(d.label)}: entrate ${fmtEur(d.income)} · uscite ${fmtEur(d.expense)} · saldo ${netFmt}${isClickable ? ' (clicca per andare al mese)' : ''}`;
       return `
-        <g>
+        <g class="bar-col" ${d.month ? `data-month="${d.month}" style="cursor:pointer;"` : ''}>
+          <title>${titleText}</title>
           ${valueLabel}
           <rect x="${x - barW - gap / 2}" y="${pad.top + ih - ih1}" width="${barW}" height="${Math.max(0, ih1)}"
-                rx="3" fill="var(--income)"><title>${d.label}: entrate ${fmtEur(d.income)}</title></rect>
+                rx="3" fill="var(--income)"></rect>
           <rect x="${x + gap / 2}" y="${pad.top + ih - eh1}" width="${barW}" height="${Math.max(0, eh1)}"
-                rx="3" fill="var(--expense)"><title>${d.label}: uscite ${fmtEur(d.expense)}</title></rect>
+                rx="3" fill="var(--expense)"></rect>
           ${
             showLabel
               ? `<text x="${x}" y="${height - 8}" text-anchor="middle" fill="var(--ink-faint)" font-size="9.5">${escapeHtml(

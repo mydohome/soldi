@@ -1160,3 +1160,14 @@ code.block {
 .legend .row-btn:hover { color: var(--brand); }
 .legend .row-btn:focus-visible { outline: 2px solid var(--brand); outline-offset: 3px; border-radius: 6px; }
 .others-list { max-height: 55vh; overflow-y: auto; }
+
+/* Centratura Donut & Interattività Grafici */
+@media (max-width: 640px) {
+  .donut-wrap { justify-content: center; }
+  .donut-wrap svg { margin: 0 auto; display: block; }
+  .donut-wrap .legend { width: 100%; margin-top: 8px; }
+}
+.bar-col { transition: opacity 0.15s ease; }
+.bar-col[data-month]:hover { opacity: 0.82; }
+.drill-chip { cursor: pointer; transition: transform 0.1s ease, background 0.15s ease; }
+.drill-chip:hover { background: rgba(255, 255, 255, 0.28); transform: translateY(-1px); }

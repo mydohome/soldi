@@ -312,6 +312,30 @@ function renderShell() {
   renderView();
   // Badge sul menu e, una volta per sessione, pop-up con le rate scadute.
   payments.checkOnOpen();
+  // Scorciatoie da tastiera: N = Nuovo movimento, T = Oggi, ← / → = Mese prec/succ
+  if (!window._soldiKeyboardBound) {
+    window._soldiKeyboardBound = true;
+    window.addEventListener('keydown', (e) => {
+      if (!state.user) return;
+      const tag = (e.target && e.target.tagName) || '';
+      if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT' || e.target?.isContentEditable) return;
+      if (e.metaKey || e.ctrlKey || e.altKey) return;
+      if (e.key === 'n' || e.key === 'N') {
+        e.preventDefault();
+        openTxModal();
+      } else if (e.key === 't' || e.key === 'T') {
+        e.preventDefault();
+        state.anchor = today();
+        renderView();
+      } else if (e.key === 'ArrowLeft' && state.view === 'dashboard') {
+        const prevBtn = document.getElementById('prev');
+        if (prevBtn) { e.preventDefault(); prevBtn.click(); }
+      } else if (e.key === 'ArrowRight' && state.view === 'dashboard') {
+        const nextBtn = document.getElementById('next');
+        if (nextBtn) { e.preventDefault(); nextBtn.click(); }
+      }
+    });
+  }
 }
 
 function renderView() {
@@ -359,6 +383,7 @@ async function viewDashboard(main) {
           label: capitalize(dtfMonth.format(parseISO(m.month + '-01')).split(' ')[0]).slice(0, 3),
           income: m.income,
           expense: m.expense,
+          month: m.month,
         }))
       : data.dailyTrend.map((d) => ({ label: dtfShort.format(parseISO(d.date)).replace('.', ''), income: d.income, expense: d.expense }));
 
@@ -412,8 +437,8 @@ async function viewDashboard(main) {
         <span class="hero-label">Saldo ${p === 'day' ? 'del giorno' : p === 'week' ? 'della settimana' : 'del mese'}</span>
         <span class="hero-value">${fmtEur(block.net)}</span>
         <div class="hero-chips">
-          <span class="hero-chip up">${icons.arrowUp}Entrate ${fmtEur(block.income)}</span>
-          <span class="hero-chip down">${icons.arrowDown}Uscite ${fmtEur(block.expense)}</span>
+          <span class="hero-chip up drill-chip" data-drill="income" role="button" tabindex="0" title="Vedi movimenti entrate">${icons.arrowUp}Entrate ${fmtEur(block.income)}</span>
+          <span class="hero-chip down drill-chip" data-drill="expense" role="button" tabindex="0" title="Vedi movimenti uscite">${icons.arrowDown}Uscite ${fmtEur(block.expense)}</span>
         </div>
       </div>
 
@@ -522,6 +547,24 @@ async function viewDashboard(main) {
       e.preventDefault();
       openPeriodTxModal(card.dataset.drill, () => viewDashboard(main));
     }
+  });
+  main.querySelectorAll('.drill-chip').forEach((chip) => {
+    chip.addEventListener('click', () => {
+      openPeriodTxModal(chip.dataset.drill, () => viewDashboard(main));
+    });
+    chip.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter' || e.key === ' ') {
+        e.preventDefault();
+        openPeriodTxModal(chip.dataset.drill, () => viewDashboard(main));
+      }
+    });
+  });
+  main.querySelectorAll('.bars .bar-col[data-month]').forEach((col) => {
+    col.addEventListener('click', () => {
+      state.anchor = col.dataset.month + '-01';
+      state.period = 'month';
+      viewDashboard(main);
+    });
   });
   payments.bindDueCard(main, () => viewDashboard(main));
   main.querySelector('#cat-others')?.addEventListener('click', () => {
